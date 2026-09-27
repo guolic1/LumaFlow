@@ -5,9 +5,99 @@
 	(uuid "3f7eed5a-fef8-4c57-9531-b025161fe133")
 	(paper "A4")
 	(lib_symbols)
+	(wire
+		(pts
+			(xy 76.2 68.58) (xy 81.28 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "04a4b00c-b953-465b-bf99-399d8ce9eb8d")
+	)
+	(wire
+		(pts
+			(xy 76.2 72.39) (xy 81.28 72.39)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "078d2944-57bb-45ae-9a66-1fbac38883db")
+	)
+	(wire
+		(pts
+			(xy 111.76 74.93) (xy 116.84 74.93)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "34931169-a785-4dcf-9361-bb8ed130df3c")
+	)
+	(bus
+		(pts
+			(xy 111.76 88.9) (xy 116.84 88.9)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "40cd2d54-a155-46c0-8850-ebd50a7b71fd")
+	)
+	(wire
+		(pts
+			(xy 76.2 74.93) (xy 81.28 74.93)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "47a418d1-4fc8-4552-af5b-ecead4ae4090")
+	)
+	(wire
+		(pts
+			(xy 76.2 81.28) (xy 81.28 81.28)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "824a9996-3536-46b2-94e9-5fefe7ff50ae")
+	)
+	(wire
+		(pts
+			(xy 111.76 68.58) (xy 116.84 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "83b934d3-1496-405e-ba33-00fa3463012b")
+	)
+	(wire
+		(pts
+			(xy 76.2 83.82) (xy 81.28 83.82)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c12cc328-ec2f-429d-98be-7bca17893c9a")
+	)
+	(wire
+		(pts
+			(xy 111.76 72.39) (xy 116.84 72.39)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d0c3c54f-9bc0-43f3-8cd5-7b4de77db84d")
+	)
 	(sheet
-		(at 106.68 66.04)
-		(size 24.13 20.32)
+		(at 116.84 86.36)
+		(size 13.97 5.08)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
@@ -22,7 +112,7 @@
 		)
 		(uuid "054653b7-3194-4265-956e-d6e4bd866917")
 		(property "Sheetname" "LED Matrix"
-			(at 106.68 65.3284 0)
+			(at 116.84 85.6484 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -33,7 +123,7 @@
 			)
 		)
 		(property "Sheetfile" "LED_Matrix.kicad_sch"
-			(at 106.68 86.9446 0)
+			(at 116.84 92.0246 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -44,10 +134,331 @@
 				(justify left top)
 			)
 		)
+		(pin "IO[0..17]" bidirectional
+			(at 116.84 88.9 180)
+			(uuid "2b306bbd-886f-464f-8006-7225eb297a7e")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
 		(instances
 			(project "LumaFlow"
 				(path "/3f7eed5a-fef8-4c57-9531-b025161fe133"
 					(page "2")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 81.28 66.04)
+		(size 30.48 27.94)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "2d126cd6-ee24-439c-a8cb-88a8cbafce2c")
+		(property "Sheetname" "MCU"
+			(at 81.28 65.3284 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "MCU.kicad_sch"
+			(at 81.28 92.0246 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(pin "BAT_SENSE" input
+			(at 81.28 81.28 180)
+			(uuid "f5007794-68ef-49cc-8321-c29a3043af79")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "IMU_INT1" input
+			(at 111.76 68.58 0)
+			(uuid "ff771b5d-c76c-42c6-87d9-a72463e8d04b")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "IO[0..17]" bidirectional
+			(at 111.76 88.9 0)
+			(uuid "d8c5e817-b88a-47c4-98c8-d80f27777863")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "~{CHARGE}" input
+			(at 81.28 68.58 180)
+			(uuid "b4343ae3-a7e0-4b84-be54-f65d2989860d")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "SENSE_EN" output
+			(at 81.28 83.82 180)
+			(uuid "e63b4f5d-67a0-46f2-bfd0-c9c7521028da")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "I2C1_SDA" bidirectional
+			(at 111.76 74.93 0)
+			(uuid "44593b29-5357-4975-9e25-2126509dc8de")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "I2C1_SCL" output
+			(at 111.76 72.39 0)
+			(uuid "8f5eb11d-fecf-463e-ad6b-a89f3a9060fc")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "UART2_RX" input
+			(at 81.28 74.93 180)
+			(uuid "13afdd24-3072-49c7-9fda-4ab43ac1fc94")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "UART2_TX" output
+			(at 81.28 72.39 180)
+			(uuid "1c245c7a-723c-4c5e-850a-35a090f0af3b")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(instances
+			(project "LumaFlow"
+				(path "/3f7eed5a-fef8-4c57-9531-b025161fe133"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 116.84 66.04)
+		(size 13.97 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "b8e97322-fa10-4f17-a81f-7a40705ce49c")
+		(property "Sheetname" "IMU"
+			(at 116.84 65.3284 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "IMU.kicad_sch"
+			(at 116.84 81.8646 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(pin "INT1" output
+			(at 116.84 68.58 180)
+			(uuid "b86f3d39-ed1a-4934-8d3e-894839966933")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "SCL" input
+			(at 116.84 72.39 180)
+			(uuid "db0fdacc-6a5b-492b-a095-705f5bc9154f")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "SDA" bidirectional
+			(at 116.84 74.93 180)
+			(uuid "bc05c441-f0ab-4d87-aa13-4946a7e1d100")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(instances
+			(project "LumaFlow"
+				(path "/3f7eed5a-fef8-4c57-9531-b025161fe133"
+					(page "5")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 62.23 66.04)
+		(size 13.97 22.86)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "f55f9541-15f6-4105-9d6a-71007ee50b03")
+		(property "Sheetname" "Power"
+			(at 62.23 65.3284 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "Power.kicad_sch"
+			(at 62.23 86.9446 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(pin "~{CHARGE}" output
+			(at 76.2 68.58 0)
+			(uuid "bc67712b-7bf5-4ea2-be34-2acc33a0603b")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "VBAT_SENSE" output
+			(at 76.2 81.28 0)
+			(uuid "b60dda12-68c9-49bc-906a-2ba5d79e9529")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "SENSE_EN" input
+			(at 76.2 83.82 0)
+			(uuid "067064ae-f4a2-4c02-93ab-f22a13a709b5")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "RXD" input
+			(at 76.2 72.39 0)
+			(uuid "529ead9e-45e0-4409-b280-1c729be83500")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "TXD" output
+			(at 76.2 74.93 0)
+			(uuid "7596b353-5ed3-43ba-a6fd-824b9157e7f2")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(instances
+			(project "LumaFlow"
+				(path "/3f7eed5a-fef8-4c57-9531-b025161fe133"
+					(page "4")
 				)
 			)
 		)
