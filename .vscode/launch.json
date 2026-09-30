@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "LumaFlow: OpenOCD",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "cwd": "${workspaceFolder}/firmware",
+            "executable": "${workspaceFolder}/firmware/build/Debug/LumaFlow.elf",
+            "serverpath": "${config:lumaflow.openocdPath}",
+            "armToolchainPath": "${config:lumaflow.armToolchainPath}",
+            "configFiles": ["${config:lumaflow.openocdConfig}"],
+            "runToEntryPoint": "main",
+            "preLaunchTask": "LumaFlow: Prepare debug"
+        }
+    ]
+}

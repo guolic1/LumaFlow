@@ -1,0 +1,70 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "LumaFlow: Configure",
+            "type": "process",
+            "command": "${config:cmake.cmakePath}",
+            "args": [
+                "--preset", "Debug",
+                "-DCMAKE_MAKE_PROGRAM=${config:lumaflow.ninjaPath}"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/firmware",
+                "env": {
+                    "PATH": "${config:lumaflow.armToolchainPath};${env:PATH}"
+                }
+            },
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "LumaFlow: Build",
+            "type": "process",
+            "command": "${config:cmake.cmakePath}",
+            "args": ["--build", "--preset", "Debug", "--parallel"],
+            "options": {
+                "cwd": "${workspaceFolder}/firmware",
+                "env": {
+                    "PATH": "${config:lumaflow.armToolchainPath};${env:PATH}"
+                }
+            },
+            "dependsOn": ["LumaFlow: Configure"],
+            "dependsOrder": "sequence",
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": ["$gcc"],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "LumaFlow: Check debug config",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile", "-ExecutionPolicy", "Bypass",
+                "-File", "${workspaceFolder}/.vscode/check-debug.ps1"
+            ],
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "LumaFlow: Flash",
+            "type": "process",
+            "command": "${config:lumaflow.openocdPath}",
+            "args": [
+                "-f", "${config:lumaflow.openocdConfig}",
+                "-c", "program {build/Debug/LumaFlow.elf} verify reset exit"
+            ],
+            "options": { "cwd": "${workspaceFolder}/firmware" },
+            "dependsOn": ["LumaFlow: Check debug config", "LumaFlow: Build"],
+            "dependsOrder": "sequence",
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "LumaFlow: Prepare debug",
+            "dependsOn": ["LumaFlow: Check debug config", "LumaFlow: Build"],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        }
+    ]
+}
