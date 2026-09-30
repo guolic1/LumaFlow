@@ -1,0 +1,26 @@
+# KiCad temporary and user-specific files
+*.kicad_prl
+*.kicad_sch.lck
+*.kicad_pcb.lck
+~*.lck
+
+# Autosave and backup files
+_autosave-*
+*-backups/
+*.bak
+*.kicad_sch-bak
+*.kicad_pcb-bak
+.history/
+
+# Generated cache files
+fp-info-cache
+*.net
+
+# Generated BOM and fabrication outputs
+*.csv
+*.pos
+*.pdf
+*.gbr
+*.drl
+*.gbrjob
+*.zip
