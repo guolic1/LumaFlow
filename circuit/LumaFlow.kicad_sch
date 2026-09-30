@@ -221,16 +221,6 @@
 				(justify right)
 			)
 		)
-		(pin "~{CHARGE}" input
-			(at 81.28 68.58 180)
-			(uuid "b4343ae3-a7e0-4b84-be54-f65d2989860d")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
 		(pin "SENSE_EN" output
 			(at 81.28 83.82 180)
 			(uuid "e63b4f5d-67a0-46f2-bfd0-c9c7521028da")
@@ -261,9 +251,9 @@
 				(justify right)
 			)
 		)
-		(pin "UART2_RX" input
+		(pin "UART1_RX" input
 			(at 81.28 74.93 180)
-			(uuid "13afdd24-3072-49c7-9fda-4ab43ac1fc94")
+			(uuid "156fc7de-4a63-46c1-b258-4500596ff98e")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -271,9 +261,9 @@
 				(justify left)
 			)
 		)
-		(pin "UART2_TX" output
+		(pin "UART1_TX" output
 			(at 81.28 72.39 180)
-			(uuid "1c245c7a-723c-4c5e-850a-35a090f0af3b")
+			(uuid "0af9c339-b4e0-4fc0-bcff-8f91b8804549")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -403,16 +393,6 @@
 					(size 1.27 1.27)
 				)
 				(justify left top)
-			)
-		)
-		(pin "~{CHARGE}" output
-			(at 76.2 68.58 0)
-			(uuid "bc67712b-7bf5-4ea2-be34-2acc33a0603b")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
 			)
 		)
 		(pin "VBAT_SENSE" output
