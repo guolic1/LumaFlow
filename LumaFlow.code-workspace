@@ -1,0 +1,51 @@
+{
+    "folders": [
+        { "path": "." }
+    ],
+    "settings": {
+        "cmake.sourceDirectory": "${workspaceFolder}/firmware",
+        "cmake.useCMakePresets": "always",
+        "cmake.configureOnOpen": false,
+        "cmake.options.statusBarVisibility": "hidden",
+        "C_Cpp.default.compileCommands": "${workspaceFolder}/firmware/build/Debug/compile_commands.json",
+        "C_Cpp.default.intelliSenseMode": "windows-gcc-arm",
+        "debug.saveBeforeStart": "allEditorsInActiveGroup",
+        "task.saveBeforeRun": "always",
+        "actionButtons": {
+            "defaultColor": "none",
+            "reloadButton": null,
+            "loadNpmCommands": false,
+            "inheritGlobalCommands": false,
+            "commands": [
+                {
+                    "name": "$(tools) 编译",
+                    "tooltip": "配置并编译 Debug 固件",
+                    "useVsCodeApi": true,
+                    "command": "workbench.action.tasks.runTask",
+                    "args": ["LumaFlow: Build"]
+                },
+                {
+                    "name": "$(cloud-download) 下载",
+                    "tooltip": "编译、写入并校验固件，然后复位运行",
+                    "useVsCodeApi": true,
+                    "command": "workbench.action.tasks.runTask",
+                    "args": ["LumaFlow: Flash"]
+                },
+                {
+                    "name": "$(debug-alt) 调试",
+                    "tooltip": "编译并启动 Cortex-Debug，下载后停在 main",
+                    "useVsCodeApi": true,
+                    "command": "workbench.action.debug.start"
+                }
+            ]
+        }
+    },
+    "extensions": {
+        "recommendations": [
+            "ms-vscode.cmake-tools",
+            "ms-vscode.cpptools",
+            "marus25.cortex-debug",
+            "seunlanlege.action-buttons"
+        ]
+    }
+}

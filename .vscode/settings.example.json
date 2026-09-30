@@ -1,0 +1,8 @@
+{
+    "cmake.cmakePath": "C:/path/to/cmake/bin/cmake.exe",
+    "lumaflow.ninjaPath": "C:/path/to/ninja.exe",
+    "lumaflow.armToolchainPath": "C:/path/to/arm-gnu-toolchain/bin",
+    "C_Cpp.default.compilerPath": "C:/path/to/arm-gnu-toolchain/bin/arm-none-eabi-gcc.exe",
+    "lumaflow.openocdPath": "C:/path/to/openocd/bin/openocd.exe",
+    "lumaflow.openocdConfig": ""
+}
