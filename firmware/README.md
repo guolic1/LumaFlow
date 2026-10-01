@@ -18,6 +18,8 @@ firmware/
 │   └── application.ld             # 手工维护的应用链接脚本
 ├── bootloader/
 │   ├── CMakeLists.txt             # 显式列出 Bootloader 源码
+│   ├── application_image.c/.h     # 镜像元数据、向量表和 CRC32 校验
+│   ├── application_update.c/.h    # Application 擦写与升级状态机
 │   ├── commands.c/.h              # Bootloader 命令表
 │   ├── jump_to_application.c/.h   # 应用检查与跳转
 │   ├── main.c                     # Bootloader 入口 main()
@@ -39,16 +41,34 @@ firmware/
 ```
 `board/.gitignore` 忽略生成的顶层 CMake 工程、Preset、两份工具链、`*.ld` 和 `build/`。`cmake/stm32cubemx/CMakeLists.txt`、源码、驱动、启动文件、`.ioc` 及 `.mxproject` 继续保留。
 
-应用和 Bootloader 分别使用手工维护的 `application/application.ld` 和 `bootloader/bootloader.ld`。64 KB Flash 划分如下，两个分区均按 2 KB 擦除页对齐：
+应用和 Bootloader 分别使用手工维护的 `application/application.ld` 和 `bootloader/bootloader.ld`。64 KB Flash 划分如下。升级元数据直接占用 Application 区域末尾 32 字节，不额外占用擦除页：
 
-| 镜像 | Flash 起始地址 / 向量表地址 | Flash 结束地址（含） | 容量 |
+| 区域 | Flash 起始地址 | Flash 结束地址（含） | 容量 |
 | --- | --- | --- | --- |
 | Bootloader | `0x08000000` | `0x08001FFF` | 8 KB |
-| Application | `0x08002000` | `0x0800FFFF` | 56 KB |
+| Application 镜像 | `0x08002000` | `0x0800FFDF` | 57312 字节（`0xDFE0`） |
+| Application 元数据 | `0x0800FFE0` | `0x0800FFFF` | 32 字节 |
 
-两份镜像的 RAM 均从 `0x20000000` 开始，容量为 8 KB，堆预留为 0，栈预留为 1 KB；尚未单独预留升级元数据区域。链接器按各自 Flash 分区限制镜像大小。CubeMX 重新生成的 `.ld` 不会覆盖手工脚本，内存布局及堆栈预留需在手工脚本中维护。
+两份镜像的 RAM 均从 `0x20000000` 开始，容量为 8 KB，堆预留为 0，栈预留为 1 KB。Application 链接脚本只允许使用前 57312 字节，防止链接结果覆盖末尾元数据。元数据与镜像尾部共享最后一个 2 KB 擦除页，但不会占用额外页。CubeMX 重新生成的 `.ld` 不会覆盖手工脚本，内存布局及堆栈预留需在手工脚本中维护。
 
-Bootloader 每次复位都会初始化 USART1 并等待 200 ms：收到一帧 CRC 正确的命令后停留在命令模式，否则在应用向量表有效时清理外设状态并跳转到 Application；应用向量无效时永久停留在命令模式，从而保留串口重刷入口。Application 的 `ENTER_BOOTLOADER` 命令会在响应完成后执行软件复位，上位机需要在新的 200 ms 窗口内发送合法命令。应用有效性目前只检查初始栈和复位入口范围，尚未加入整镜像 CRC、升级元数据和 Flash 写入命令。
+Bootloader 每次复位都会初始化 USART1 并等待 200 ms：收到一帧 CRC 正确的命令后停留在命令模式，否则仅在提交标记、元数据、初始栈、复位入口和整镜像 CRC32 全部有效时清理外设状态并跳转到 Application；任一条件失败都会永久停留在命令模式，从而保留串口重刷入口。Application 的 `ENTER_BOOTLOADER` 命令会在响应完成后执行软件复位，上位机需要在新的 200 ms 窗口内发送合法命令。
+
+元数据采用以下固定布局，多字节字段均为小端：
+
+| 偏移 | 长度 | 字段 | 说明 |
+| --- | --- | --- | --- |
+| `0x00` | 4 | magic | 固定为 `0x414D554C` |
+| `0x04` | 2 | format version | 当前为 `1` |
+| `0x06` | 2 | header size | 固定为 `32` |
+| `0x08` | 4 | image size | 从 `0x08002000` 开始参与校验的字节数 |
+| `0x0C` | 4 | image CRC32 | IEEE CRC32，初值和最终异或值均为 `0xFFFFFFFF` |
+| `0x10` | 4 | firmware version | 由上位机定义并写入的版本值 |
+| `0x14` | 4 | reserved | 固定为 `0` |
+| `0x18` | 8 | commit marker | 固定为 `0x4C554D4141505031`，升级最后一步写入 |
+
+升级开始时先擦除包含提交标记的最后一页，再擦除其余 Application 页，因此擦除一旦开始，旧镜像立即失效。升级数据必须从偏移 0 开始连续发送；Bootloader 把前 8 字节向量表暂存在 RAM，只把后续镜像数据写入 Flash。全部数据收完后先用 RAM 中的向量表和 Flash 中的镜像正文计算 CRC32，通过后依次写入元数据前 24 字节、向量表，并再次从 Flash 校验 CRC32，最后才写入 8 字节提交标记。升级不完整、校验失败或任意阶段掉电时，提交标记不会等于完整固定值，复位后不会跳转到不完整的 Application。
+
+启用此校验后，只有向量表而没有上述元数据的旧 Application 会被视为无效；通过调试器直接下载 Application 时，也必须另外生成并写入匹配的 32 字节元数据。通过升级协议下载时由 Bootloader 自动生成元数据。
 
 ## 串口命令协议
 
@@ -74,9 +94,26 @@ USART1 使用 `2000000 8N1`。RX 采用循环 DMA，并通过 DMA 半传输、�
 | `0x01` | `PING` | 是 | 是 | 原样返回最多 32 字节 payload |
 | `0x02` | `GET_INFO` | 是 | 是 | 返回协议、镜像和能力信息 |
 | `0x10` | `ENTER_BOOTLOADER` | 否 | 是 | 响应完成后软件复位，主机随后重新握手 |
-| `0x11` | `BOOT_APPLICATION` | 是 | 否 | 应用向量表有效时响应并跳转 |
+| `0x11` | `BOOT_APPLICATION` | 是 | 否 | Application 完整校验有效时响应并跳转 |
+| `0x20` | `BEGIN_UPDATE` | 是 | 否 | 校验升级参数并擦除 Application 区域 |
+| `0x21` | `WRITE_CHUNK` | 是 | 否 | 按顺序写入一块镜像数据 |
+| `0x22` | `END_UPDATE` | 是 | 否 | 校验镜像并完成原子提交 |
+| `0x23` | `GET_UPDATE_STATUS` | 是 | 否 | 查询升级状态和下一个写入偏移 |
 
 `GET_INFO` 的 12 字节 payload 依次为：协议版本、镜像类型、固件主/次/补丁版本、保留字节、最大 payload（2 字节）、能力位（4 字节）。镜像类型 `1` 表示 Bootloader，`2` 表示 Application。
+
+升级命令 payload 和响应如下：
+
+| 命令 | 请求 payload | 成功响应 payload |
+| --- | --- | --- |
+| `BEGIN_UPDATE` | `image_size:u32`、`image_crc32:u32`、`firmware_version:u32` | `max_chunk:u16`（当前为 120）、`reserved:u16`、`next_offset:u32` |
+| `WRITE_CHUNK` | `offset:u32` 加 1～120 字节镜像数据 | `next_offset:u32` |
+| `END_UPDATE` | 无 | 无 |
+| `GET_UPDATE_STATUS` | 无 | `state:u8`、`last_result:u8`、`reserved:u16`、`next_offset:u32`、`image_size:u32` |
+
+升级状态 `0`～`3` 依次表示 idle、receiving、complete、failed；`last_result` 的 `0`～`4` 依次表示成功、状态错误、参数错误、Flash 错误和校验错误。每个 `WRITE_CHUNK` 的偏移必须等于设备返回的 `next_offset`；第一块必须至少包含完整向量表，除最后一块外，块长度必须是 8 的倍数。串口升级使用停等方式：发送一条命令并收到响应后才能发送下一条，尤其不能在 Flash 擦写期间连续灌入多帧。Bootloader 的 `GET_INFO` 能力位 bit 2 表示支持 Application 升级。
+
+响应状态码新增 `6`（参数错误）、`7`（Flash 操作错误）和 `8`（镜像校验错误）。Flash 操作错误或校验错误会将升级状态置为 failed，需要重新发送 `BEGIN_UPDATE` 从擦除开始；参数或顺序错误可根据 `GET_UPDATE_STATUS` 返回的 `next_offset` 修正后继续。
 
 协议核心的主机测试位于 `tests/`，可独立配置并运行：
 
