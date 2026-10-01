@@ -1,11 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-#
-# This file is generated only once,
-# and is not re-generated if converter is called multiple times.
-#
-# User is free to modify the file as much as necessary
-#
+# Hand-maintained firmware build; CubeMX owns the project inside board/.
 
 # Setup compiler settings
 set(CMAKE_C_STANDARD 11)
@@ -37,22 +32,17 @@ add_executable(${CMAKE_PROJECT_NAME})
 # Add STM32CubeMX generated sources
 add_subdirectory(board/cmake/stm32cubemx)
 
-# Link directories setup
-target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined library search paths
-)
-
-# Application owns the entry point.
+# Application owns the entry point; board/Core/Src/main.c provides CubeMX setup.
 add_subdirectory(application)
 
-# Add include paths
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
+# Keep image layout out of the toolchain so it can be chosen per firmware target.
+set(LUMAFLOW_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/application/application.ld")
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+    "-T${LUMAFLOW_LINKER_SCRIPT}"
+    "LINKER:-Map=${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_PROJECT_NAME}.map"
 )
-
-# Add project symbols (macros)
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined symbols
+set_property(TARGET ${CMAKE_PROJECT_NAME} APPEND PROPERTY
+    LINK_DEPENDS "${LUMAFLOW_LINKER_SCRIPT}"
 )
 
 # Remove wrong libob.a library dependency when using cpp files
@@ -61,6 +51,4 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 # Add linked libraries
 target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
-
-    # Add user defined libraries
 )

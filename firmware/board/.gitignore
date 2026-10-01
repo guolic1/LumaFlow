@@ -1,0 +1,10 @@
+*.ld
+
+# The firmware root owns the build; these CubeMX project files are not used.
+/CMakeLists.txt
+/CMakePresets.json
+/cmake/gcc-arm-none-eabi.cmake
+/cmake/starm-clang.cmake
+
+# Outputs from configuring the generated board project directly.
+/build/
