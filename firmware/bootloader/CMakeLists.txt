@@ -1,4 +1,6 @@
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    application_image.c
+    application_update.c
     commands.c
     jump_to_application.c
     main.c

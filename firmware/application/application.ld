@@ -49,7 +49,7 @@
 *****************************************************************************
 */
 
-/* Application follows the 8 KB bootloader and uses the remaining 56 KB. */
+/* Application follows the 8 KB bootloader; the final 32 bytes hold image metadata. */
 
 /* Entry Point */
 ENTRY(Reset_Handler)
@@ -58,7 +58,7 @@ ENTRY(Reset_Handler)
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 8K
-FLASH (rx)      : ORIGIN = 0x08002000, LENGTH = 56K
+FLASH (rx)      : ORIGIN = 0x08002000, LENGTH = 0xDFE0
 }
 
 /* Highest address of the user mode stack */

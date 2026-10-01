@@ -2,13 +2,9 @@
 
 #include <stdint.h>
 
+#include "application_image.h"
 #include "main.h"
 #include "serial_uart.h"
-
-#define APPLICATION_FLASH_START 0x08002000UL
-#define APPLICATION_FLASH_END 0x08010000UL
-#define SRAM_START 0x20000000UL
-#define SRAM_END 0x20002000UL
 
 __attribute__((naked, noreturn)) static void start_application(uint32_t stack_pointer,
                                                                uint32_t reset_handler)
@@ -20,13 +16,7 @@ __attribute__((naked, noreturn)) static void start_application(uint32_t stack_po
 
 bool bootloader_application_is_valid(void)
 {
-    uint32_t stack_pointer = *(const volatile uint32_t *)APPLICATION_FLASH_START;
-    uint32_t reset_handler = *(const volatile uint32_t *)(APPLICATION_FLASH_START + 4U);
-    uint32_t reset_address = reset_handler & ~1UL;
-
-    return (stack_pointer >= SRAM_START) && (stack_pointer <= SRAM_END) &&
-           ((stack_pointer & 0x7U) == 0U) && ((reset_handler & 1U) != 0U) &&
-           (reset_address >= APPLICATION_FLASH_START) && (reset_address < APPLICATION_FLASH_END);
+    return application_image_is_valid();
 }
 
 void bootloader_jump_to_application(void)
