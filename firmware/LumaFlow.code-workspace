@@ -12,6 +12,10 @@
             "buildPreset": { "statusBarVisibility": "visible" }
         },
         "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+        "C_Cpp.default.compileCommands": [
+            "${workspaceFolder}/build/Application/compile_commands.json",
+            "${workspaceFolder}/build/Bootloader/compile_commands.json"
+        ],
         "C_Cpp.default.intelliSenseMode": "windows-gcc-arm",
         "debug.saveBeforeStart": "allEditorsInActiveGroup",
         "task.saveBeforeRun": "always",

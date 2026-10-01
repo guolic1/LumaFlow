@@ -63,6 +63,8 @@ cmake --build build/Bootloader --config Debug --parallel
 
 从旧配置迁移后，重新选择一次 Configure Preset 和 Build Preset。原 `build/Debug`、`build/Release`、`build/Bootloader-Debug` 等目录不再使用，可自行删除。
 
+工作区的 `C_Cpp.default.compileCommands` 已加入 `build/Application/compile_commands.json` 和 `build/Bootloader/compile_commands.json`。首次使用时分别执行 `cmake --preset Application`、`cmake --preset Bootloader` 生成数据库，无需先编译。Ninja Multi-Config 的每份数据库同时包含 Debug 和 Release 的记录，不会在这两个编译选项子目录下单独生成数据库。CMake Tools 仍优先为当前配置和编译选项提供 IntelliSense 参数；编译数据库用于补充未由它提供配置的文件。此优先级见 [C/C++ 扩展官方说明](https://code.visualstudio.com/docs/cpp/customize-cpp-settings)。
+
 Application 和 Bootloader 均通过 `board/cmake/stm32cubemx` 编译同一份 `board/startup_stm32g031xx.s`，分别链接到各自 ELF 中；无需在两个源码目录复制 startup，也不要在同一目标中重复添加。startup 提供向量表和 `Reset_Handler`，初始化栈、`.data`、`.bss` 及 C 运行环境后调用本镜像的 `main()`。后续实现 Bootloader 跳转时，应进入应用向量表中的复位入口，并配合应用中断向量表重定位，不能只直接调用应用 `main()`。
 
 ## 打开工程
