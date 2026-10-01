@@ -1,6 +1,7 @@
 #include "main.h"
 
 #include "commands.h"
+#include "dma.h"
 #include "jump_to_application.h"
 #include "serial_uart.h"
 
@@ -44,6 +45,7 @@ int main(void)
 
     SystemClock_Config();
 
+    MX_DMA_Init();
     serial_uart_init();
     bootloader_commands_init(&command_server);
 

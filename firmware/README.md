@@ -54,7 +54,7 @@ Bootloader 每次复位都会初始化 USART1 并等待 200 ms：收到一帧 CR
 
 Application 和 Bootloader 分别链接 `common/` 下的同一份协议与 USART 适配源码，各自提供独立命令表。共享代码不会放在 Application Flash 中，因此应用缺失或损坏时不影响 Bootloader 串口恢复能力。
 
-USART1 使用 `115200 8N1`、RX 中断和 256 字节环形缓冲区；TX 当前采用轮询发送。协议不使用动态内存，最大 payload 为 128 字节。线上帧为 `COBS(raw_frame) + 0x00`，多字节整数均为小端：
+USART1 使用 `2000000 8N1`。RX 采用循环 DMA，并通过 DMA 半传输、传输完成和 USART IDLE 中断把数据写入 256 字节软件环形缓冲区；TX 使用普通模式 DMA。协议不使用动态内存，最大 payload 为 128 字节。线上帧为 `COBS(raw_frame) + 0x00`，多字节整数均为小端：
 
 | raw frame 字段 | 长度 | 说明 |
 | --- | --- | --- |
