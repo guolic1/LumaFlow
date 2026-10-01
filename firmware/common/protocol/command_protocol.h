@@ -18,6 +18,9 @@ typedef enum
     COMMAND_STATUS_BAD_STATE = 3,
     COMMAND_STATUS_UNSUPPORTED_VERSION = 4,
     COMMAND_STATUS_INTERNAL_ERROR = 5,
+    COMMAND_STATUS_BAD_ARGUMENT = 6,
+    COMMAND_STATUS_FLASH_ERROR = 7,
+    COMMAND_STATUS_VERIFY_ERROR = 8,
 } command_status_t;
 
 typedef command_status_t (*command_handler_t)(const void *context, const uint8_t *request,
