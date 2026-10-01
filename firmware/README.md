@@ -2,9 +2,40 @@
 
 目标芯片为 STM32G031G8，使用现有 CubeMX CMake 工程、Arm GNU Toolchain、Ninja 和 OpenOCD。以下 VS Code 配置面向 Windows。
 
+## 源码与构建结构
+
+```text
+firmware/
+├── LumaFlow.code-workspace        # VS Code 工作区，以 firmware 为根目录
+├── .vscode/                      # 编译、下载、调试和本地工具路径配置
+├── CMakeLists.txt                 # 手工维护，组织固件目标和各子目录
+├── CMakePresets.json              # 顶层 Debug / Release 配置
+├── cmake/gcc-arm-none-eabi.cmake   # 顶层构建使用的工具链
+├── application/
+│   ├── CMakeLists.txt             # 显式列出应用源码
+│   ├── main.c                     # 应用入口 main()
+│   └── application.ld             # 手工维护的应用链接脚本
+├── bootloader/                    # 当前为空，尚未加入构建
+└── board/                        # CubeMX 工程与全部生成内容
+    ├── LumaFlow.ioc
+    ├── .mxproject
+    ├── Core/
+    ├── Drivers/
+    ├── startup_stm32g031xx.s
+    ├── STM32G031xx_FLASH.ld
+    ├── CMakeLists.txt
+    ├── CMakePresets.json
+    └── cmake/
+```
+`board/.gitignore` 忽略生成的顶层 CMake 工程、Preset、两份工具链、`*.ld` 和 `build/`。`cmake/stm32cubemx/CMakeLists.txt`、源码、驱动、启动文件、`.ioc` 及 `.mxproject` 继续保留。
+
+应用使用 `application/application.ld`，需纳入版本管理；当前仍为从 `0x08000000` 开始的完整 64 KB Flash，尚未划分 Bootloader 区域。分区大小确定后，再分别调整应用和 Bootloader 的独立链接脚本。CubeMX 重新生成的 `.ld` 不会覆盖手工脚本，内存布局及堆栈预留需在手工脚本中维护。
+
 ## 打开工程
 
-用 VS Code 打开仓库根目录的 `LumaFlow.code-workspace`。
+用 VS Code 打开 `firmware/LumaFlow.code-workspace`。工作区根目录为 `firmware`，所有 VS Code 配置都位于该目录内。
+
+从旧布局迁移后，请重新打开这个工作区文件。三个状态栏按钮和扩展推荐由工作区文件提供；仅打开文件夹不会加载这些工作区设置。
 
 首次打开时安装工作区推荐的扩展：
 
@@ -13,11 +44,9 @@
 - Cortex-Debug：嵌入式断点、单步、变量、寄存器和内存调试。
 - VsCode Action Buttons：状态栏上的“编译”“下载”“调试”按钮。
 
-按钮未出现时执行 `Developer: Reload Window`，并确认工作区已受信任、状态栏已显示。
-
 ## 本地路径配置
 
-将 `.vscode/settings.example.json` 复制为 `.vscode/settings.json`。
+首次配置时，将 `firmware/.vscode/settings.example.json` 复制为 `firmware/.vscode/settings.json`。已有的本地路径配置随目录迁移保留，该文件不提交 Git。以下任务中的 `${workspaceFolder}` 均指 `firmware`。
 
 | 配置项 | 填写内容 |
 | --- | --- |
