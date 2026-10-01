@@ -1,4 +1,5 @@
 #include "main.h"
+#include "usart.h"
 
 extern void SystemClock_Config(void);
 
@@ -14,6 +15,8 @@ int main(void)
     LL_SYSCFG_EnablePinRemap(LL_SYSCFG_PIN_RMP_PA12);
 
     SystemClock_Config();
+
+    MX_USART1_UART_Init();
 
     while (1)
     {
