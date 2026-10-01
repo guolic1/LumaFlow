@@ -32,11 +32,18 @@ add_executable(${CMAKE_PROJECT_NAME})
 # Add STM32CubeMX generated sources
 add_subdirectory(board/cmake/stm32cubemx)
 
-# Application owns the entry point; board/Core/Src/main.c provides CubeMX setup.
-add_subdirectory(application)
+# Select one entry point and linker script per build directory.
+set(LUMAFLOW_IMAGE "application" CACHE STRING "Firmware image to build")
+set_property(CACHE LUMAFLOW_IMAGE PROPERTY STRINGS application bootloader)
+if(NOT LUMAFLOW_IMAGE STREQUAL "application" AND
+   NOT LUMAFLOW_IMAGE STREQUAL "bootloader")
+    message(FATAL_ERROR "LUMAFLOW_IMAGE must be application or bootloader")
+endif()
+message(STATUS "Firmware image: ${LUMAFLOW_IMAGE}")
+add_subdirectory(${LUMAFLOW_IMAGE})
 
 # Keep image layout out of the toolchain so it can be chosen per firmware target.
-set(LUMAFLOW_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/application/application.ld")
+set(LUMAFLOW_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/${LUMAFLOW_IMAGE}/${LUMAFLOW_IMAGE}.ld")
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     "-T${LUMAFLOW_LINKER_SCRIPT}"
     "LINKER:-Map=${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_PROJECT_NAME}.map"

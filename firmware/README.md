@@ -15,7 +15,10 @@ firmware/
 │   ├── CMakeLists.txt             # 显式列出应用源码
 │   ├── main.c                     # 应用入口 main()
 │   └── application.ld             # 手工维护的应用链接脚本
-├── bootloader/                    # 当前为空，尚未加入构建
+├── bootloader/
+│   ├── CMakeLists.txt             # 显式列出 Bootloader 源码
+│   ├── main.c                     # Bootloader 入口 main()
+│   └── bootloader.ld              # 手工维护的 Bootloader 链接脚本
 └── board/                        # CubeMX 工程与全部生成内容
     ├── LumaFlow.ioc
     ├── .mxproject
@@ -30,6 +33,10 @@ firmware/
 `board/.gitignore` 忽略生成的顶层 CMake 工程、Preset、两份工具链、`*.ld` 和 `build/`。`cmake/stm32cubemx/CMakeLists.txt`、源码、驱动、启动文件、`.ioc` 及 `.mxproject` 继续保留。
 
 应用使用 `application/application.ld`，需纳入版本管理；当前仍为从 `0x08000000` 开始的完整 64 KB Flash，尚未划分 Bootloader 区域。分区大小确定后，再分别调整应用和 Bootloader 的独立链接脚本。CubeMX 重新生成的 `.ld` 不会覆盖手工脚本，内存布局及堆栈预留需在手工脚本中维护。
+
+Bootloader 使用 `bootloader/bootloader.ld`，目前同样占用 `0x08000000` 起的 64 KB Flash 地址范围，RAM 为 8 KB，堆预留为 0，栈预留为 1 KB。两份镜像的地址范围重叠，目前只能分别下载运行，不能作为分区固件同时烧录。Bootloader 入口目前执行 `HAL_Init()`、`SystemClock_Config()` 后进入主循环，尚未实现升级或跳转到应用。
+
+Application 和 Bootloader 均通过 `board/cmake/stm32cubemx` 编译同一份 `board/startup_stm32g031xx.s`，分别链接到各自 ELF 中；无需在两个源码目录复制 startup，也不要在同一目标中重复添加。startup 提供向量表和 `Reset_Handler`，初始化栈、`.data`、`.bss` 及 C 运行环境后调用本镜像的 `main()`。后续实现 Bootloader 跳转时，应进入应用向量表中的复位入口，并配合应用中断向量表重定位，不能只直接调用应用 `main()`。
 
 ## 打开工程
 
