@@ -80,6 +80,12 @@ Application 和 Bootloader 均通过 `board/cmake/stm32cubemx` 编译同一份 `
 - Cortex-Debug：嵌入式断点、单步、变量、寄存器和内存调试。
 - VsCode Action Buttons：状态栏上的“编译”“下载”“调试”按钮。
 
+## 代码格式化
+
+`firmware/.clang-format` 统一手写 C/C++ 代码风格：4 空格缩进、大括号独占一行、100 列换行，并保留头文件顺序和注释排版。工作区使用 C/C++ 扩展内置的 clang-format，打开源文件后按 `Shift+Alt+F` 格式化，无需另外安装格式化扩展。
+
+`board/.clang-format` 禁用该目录及子目录的格式化和头文件排序，保留 CubeMX 生成代码及厂商驱动的原始格式。命令行使用 `clang-format --style=file`，让工具按源文件路径查找配置；不要显式指定顶层配置文件，否则会绕过 `board` 的禁用设置。
+
 ## 本地路径配置
 
 首次配置时，将 `firmware/.vscode/settings.example.json` 复制为 `firmware/.vscode/settings.json`。已有的本地路径配置随目录迁移保留，该文件不提交 Git。以下任务中的 `${workspaceFolder}` 均指 `firmware`。

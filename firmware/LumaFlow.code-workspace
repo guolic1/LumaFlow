@@ -17,6 +17,14 @@
             "${workspaceFolder}/build/Bootloader/compile_commands.json"
         ],
         "C_Cpp.default.intelliSenseMode": "windows-gcc-arm",
+        "C_Cpp.formatting": "clangFormat",
+        "C_Cpp.clang_format_style": "file",
+        "[c]": {
+            "editor.defaultFormatter": "ms-vscode.cpptools"
+        },
+        "[cpp]": {
+            "editor.defaultFormatter": "ms-vscode.cpptools"
+        },
         "debug.saveBeforeStart": "allEditorsInActiveGroup",
         "task.saveBeforeRun": "always",
         "actionButtons": {

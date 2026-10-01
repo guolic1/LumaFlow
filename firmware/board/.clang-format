@@ -1,0 +1,4 @@
+# Keep CubeMX output and vendor sources unchanged, including include order.
+BasedOnStyle: InheritParentConfig
+DisableFormat: true
+SortIncludes: Never
