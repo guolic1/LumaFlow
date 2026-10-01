@@ -29,6 +29,16 @@ extern "C" {
 /* Includes ------------------------------------------------------------------*/
 #include "stm32g0xx_hal.h"
 
+#include "stm32g0xx_ll_rcc.h"
+#include "stm32g0xx_ll_bus.h"
+#include "stm32g0xx_ll_system.h"
+#include "stm32g0xx_ll_exti.h"
+#include "stm32g0xx_ll_cortex.h"
+#include "stm32g0xx_ll_utils.h"
+#include "stm32g0xx_ll_pwr.h"
+#include "stm32g0xx_ll_dma.h"
+#include "stm32g0xx_ll_gpio.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -57,47 +67,47 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define SENSE_EN_Pin GPIO_PIN_14
+#define SENSE_EN_Pin LL_GPIO_PIN_14
 #define SENSE_EN_GPIO_Port GPIOC
-#define IO16_Pin GPIO_PIN_2
+#define IO16_Pin LL_GPIO_PIN_2
 #define IO16_GPIO_Port GPIOF
-#define IMU_INT_Pin GPIO_PIN_0
+#define IMU_INT_Pin LL_GPIO_PIN_0
 #define IMU_INT_GPIO_Port GPIOA
-#define BAT_SENSE_Pin GPIO_PIN_1
+#define BAT_SENSE_Pin LL_GPIO_PIN_1
 #define BAT_SENSE_GPIO_Port GPIOA
-#define IO0_Pin GPIO_PIN_2
+#define IO0_Pin LL_GPIO_PIN_2
 #define IO0_GPIO_Port GPIOA
-#define IO1_Pin GPIO_PIN_3
+#define IO1_Pin LL_GPIO_PIN_3
 #define IO1_GPIO_Port GPIOA
-#define IO2_Pin GPIO_PIN_4
+#define IO2_Pin LL_GPIO_PIN_4
 #define IO2_GPIO_Port GPIOA
-#define IO3_Pin GPIO_PIN_5
+#define IO3_Pin LL_GPIO_PIN_5
 #define IO3_GPIO_Port GPIOA
-#define IO4_Pin GPIO_PIN_6
+#define IO4_Pin LL_GPIO_PIN_6
 #define IO4_GPIO_Port GPIOA
-#define IO5_Pin GPIO_PIN_7
+#define IO5_Pin LL_GPIO_PIN_7
 #define IO5_GPIO_Port GPIOA
-#define IO6_Pin GPIO_PIN_0
+#define IO6_Pin LL_GPIO_PIN_0
 #define IO6_GPIO_Port GPIOB
-#define IO7_Pin GPIO_PIN_1
+#define IO7_Pin LL_GPIO_PIN_1
 #define IO7_GPIO_Port GPIOB
-#define IO8_Pin GPIO_PIN_8
+#define IO8_Pin LL_GPIO_PIN_8
 #define IO8_GPIO_Port GPIOA
-#define IO9_Pin GPIO_PIN_6
+#define IO9_Pin LL_GPIO_PIN_6
 #define IO9_GPIO_Port GPIOC
-#define IO10_Pin GPIO_PIN_13
+#define IO10_Pin LL_GPIO_PIN_13
 #define IO10_GPIO_Port GPIOA
-#define IO11_Pin GPIO_PIN_14
+#define IO11_Pin LL_GPIO_PIN_14
 #define IO11_GPIO_Port GPIOA
-#define IO12_Pin GPIO_PIN_15
+#define IO12_Pin LL_GPIO_PIN_15
 #define IO12_GPIO_Port GPIOA
-#define IO13_Pin GPIO_PIN_3
+#define IO13_Pin LL_GPIO_PIN_3
 #define IO13_GPIO_Port GPIOB
-#define IO14_Pin GPIO_PIN_4
+#define IO14_Pin LL_GPIO_PIN_4
 #define IO14_GPIO_Port GPIOB
-#define IO15_Pin GPIO_PIN_5
+#define IO15_Pin LL_GPIO_PIN_5
 #define IO15_GPIO_Port GPIOB
-#define IO17_Pin GPIO_PIN_8
+#define IO17_Pin LL_GPIO_PIN_8
 #define IO17_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
