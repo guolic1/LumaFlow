@@ -7,7 +7,11 @@
         "cmake.useCMakePresets": "always",
         "cmake.configureOnOpen": false,
         "cmake.options.statusBarVisibility": "hidden",
-        "C_Cpp.default.compileCommands": "${workspaceFolder}/build/Debug/compile_commands.json",
+        "cmake.options.advanced": {
+            "configurePreset": { "statusBarVisibility": "visible" },
+            "buildPreset": { "statusBarVisibility": "visible" }
+        },
+        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
         "C_Cpp.default.intelliSenseMode": "windows-gcc-arm",
         "debug.saveBeforeStart": "allEditorsInActiveGroup",
         "task.saveBeforeRun": "always",
@@ -19,7 +23,7 @@
             "commands": [
                 {
                     "name": "$(tools) 编译",
-                    "tooltip": "配置并编译 Debug 固件",
+                    "tooltip": "编译当前配置和编译选项对应的固件",
                     "useVsCodeApi": true,
                     "command": "workbench.action.tasks.runTask",
                     "args": ["LumaFlow: Build"]

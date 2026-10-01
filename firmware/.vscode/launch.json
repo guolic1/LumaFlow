@@ -7,7 +7,7 @@
             "request": "launch",
             "servertype": "openocd",
             "cwd": "${workspaceFolder}",
-            "executable": "${workspaceFolder}/build/Debug/LumaFlow.elf",
+            "executable": "${command:cmake.getLaunchTargetPath}",
             "serverpath": "${config:lumaflow.openocdPath}",
             "armToolchainPath": "${config:lumaflow.armToolchainPath}",
             "configFiles": ["${config:lumaflow.openocdConfig}"],

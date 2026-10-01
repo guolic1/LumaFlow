@@ -3,32 +3,18 @@
     "tasks": [
         {
             "label": "LumaFlow: Configure",
-            "type": "process",
-            "command": "${config:cmake.cmakePath}",
-            "args": [
-                "--preset", "Debug",
-                "-DCMAKE_MAKE_PROGRAM=${config:lumaflow.ninjaPath}"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}",
-                "env": {
-                    "PATH": "${config:lumaflow.armToolchainPath};${env:PATH}"
-                }
-            },
+            "type": "cmake",
+            "command": "configure",
+            "preset": "${command:cmake.activeConfigurePresetName}",
             "problemMatcher": [],
             "presentation": { "reveal": "always", "panel": "shared" }
         },
         {
             "label": "LumaFlow: Build",
-            "type": "process",
-            "command": "${config:cmake.cmakePath}",
-            "args": ["--build", "--preset", "Debug", "--parallel"],
-            "options": {
-                "cwd": "${workspaceFolder}",
-                "env": {
-                    "PATH": "${config:lumaflow.armToolchainPath};${env:PATH}"
-                }
-            },
+            "type": "cmake",
+            "command": "build",
+            "preset": "${command:cmake.activeBuildPresetName}",
+            "targets": ["LumaFlow"],
             "dependsOn": ["LumaFlow: Configure"],
             "dependsOrder": "sequence",
             "group": { "kind": "build", "isDefault": true },
@@ -52,7 +38,7 @@
             "command": "${config:lumaflow.openocdPath}",
             "args": [
                 "-f", "${config:lumaflow.openocdConfig}",
-                "-c", "program {build/Debug/LumaFlow.elf} verify reset exit"
+                "-c", "program {${command:cmake.getLaunchTargetPath}} verify reset exit"
             ],
             "options": { "cwd": "${workspaceFolder}" },
             "dependsOn": ["LumaFlow: Check debug config", "LumaFlow: Build"],

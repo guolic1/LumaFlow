@@ -4,35 +4,49 @@
         {
             "name": "default",
             "hidden": true,
-            "generator": "Ninja",
+            "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
-		    "toolchainFile": "${sourceDir}/cmake/gcc-arm-none-eabi.cmake",
+            "toolchainFile": "${sourceDir}/cmake/gcc-arm-none-eabi.cmake",
             "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+                "CMAKE_DEFAULT_BUILD_TYPE": "Debug"
             }
         },
         {
-            "name": "Debug",
+            "name": "Application",
             "inherits": "default",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
+            "cacheVariables": { "LUMAFLOW_IMAGE": "application" }
         },
         {
-            "name": "Release",
+            "name": "Bootloader",
             "inherits": "default",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
+            "cacheVariables": { "LUMAFLOW_IMAGE": "bootloader" }
         }
     ],
     "buildPresets": [
         {
-            "name": "Debug",
-            "configurePreset": "Debug"
+            "name": "Application-Debug",
+            "displayName": "Debug",
+            "configurePreset": "Application",
+            "configuration": "Debug"
         },
         {
-            "name": "Release",
-            "configurePreset": "Release"
+            "name": "Application-Release",
+            "displayName": "Release",
+            "configurePreset": "Application",
+            "configuration": "Release"
+        },
+        {
+            "name": "Bootloader-Debug",
+            "displayName": "Debug",
+            "configurePreset": "Bootloader",
+            "configuration": "Debug"
+        },
+        {
+            "name": "Bootloader-Release",
+            "displayName": "Release",
+            "configurePreset": "Bootloader",
+            "configuration": "Release"
         }
     ]
 }

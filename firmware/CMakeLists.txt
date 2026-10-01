@@ -9,7 +9,7 @@ set(CMAKE_C_EXTENSIONS ON)
 
 
 # Define the build type
-if(NOT CMAKE_BUILD_TYPE)
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
@@ -21,7 +21,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 # Core project settings
 project(${CMAKE_PROJECT_NAME})
-message("Build type: " ${CMAKE_BUILD_TYPE})
+if(CMAKE_CONFIGURATION_TYPES)
+    message(STATUS "Build configurations: ${CMAKE_CONFIGURATION_TYPES}")
+else()
+    message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+endif()
 
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
@@ -46,10 +50,13 @@ add_subdirectory(${LUMAFLOW_IMAGE})
 set(LUMAFLOW_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/${LUMAFLOW_IMAGE}/${LUMAFLOW_IMAGE}.ld")
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     "-T${LUMAFLOW_LINKER_SCRIPT}"
-    "LINKER:-Map=${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_PROJECT_NAME}.map"
+    "LINKER:-Map=$<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/${CMAKE_PROJECT_NAME}.map"
 )
 set_property(TARGET ${CMAKE_PROJECT_NAME} APPEND PROPERTY
     LINK_DEPENDS "${LUMAFLOW_LINKER_SCRIPT}"
+)
+set_property(TARGET ${CMAKE_PROJECT_NAME} APPEND PROPERTY
+    ADDITIONAL_CLEAN_FILES "$<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/${CMAKE_PROJECT_NAME}.map"
 )
 
 # Remove wrong libob.a library dependency when using cpp files

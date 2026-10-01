@@ -7,15 +7,38 @@ set(CMAKE_C_COMPILER_ID GNU)
 set(CMAKE_CXX_COMPILER_ID GNU)
 
 # Some default GCC settings
-# arm-none-eabi- must be part of path environment
+# Resolve the tools from local settings when present, otherwise from PATH.
 set(TOOLCHAIN_PREFIX                arm-none-eabi-)
+set(TOOLCHAIN_SUFFIX "")
+if(CMAKE_HOST_WIN32)
+    set(TOOLCHAIN_SUFFIX ".exe")
+endif()
 
-set(CMAKE_C_COMPILER                ${TOOLCHAIN_PREFIX}gcc)
+# Reuse local paths for CMake Tools and CLI builds; otherwise search PATH.
+set(LUMAFLOW_LOCAL_SETTINGS "${CMAKE_CURRENT_LIST_DIR}/../.vscode/settings.json")
+if(EXISTS "${LUMAFLOW_LOCAL_SETTINGS}")
+    file(READ "${LUMAFLOW_LOCAL_SETTINGS}" LUMAFLOW_LOCAL_SETTINGS_JSON)
+    string(JSON LUMAFLOW_LOCAL_SETTINGS_TYPE TYPE "${LUMAFLOW_LOCAL_SETTINGS_JSON}")
+    string(JSON LUMAFLOW_ARM_PATH ERROR_VARIABLE LUMAFLOW_ARM_PATH_ERROR
+        GET "${LUMAFLOW_LOCAL_SETTINGS_JSON}" "lumaflow.armToolchainPath")
+    if(NOT LUMAFLOW_ARM_PATH_ERROR AND NOT LUMAFLOW_ARM_PATH STREQUAL "")
+        file(TO_CMAKE_PATH "${LUMAFLOW_ARM_PATH}" LUMAFLOW_ARM_PATH)
+        set(TOOLCHAIN_PREFIX "${LUMAFLOW_ARM_PATH}/arm-none-eabi-")
+    endif()
+    string(JSON LUMAFLOW_NINJA_PATH ERROR_VARIABLE LUMAFLOW_NINJA_PATH_ERROR
+        GET "${LUMAFLOW_LOCAL_SETTINGS_JSON}" "lumaflow.ninjaPath")
+    if(CMAKE_GENERATOR MATCHES "^Ninja" AND NOT CMAKE_MAKE_PROGRAM AND
+       NOT LUMAFLOW_NINJA_PATH_ERROR AND NOT LUMAFLOW_NINJA_PATH STREQUAL "")
+        set(CMAKE_MAKE_PROGRAM "${LUMAFLOW_NINJA_PATH}" CACHE FILEPATH "Ninja executable")
+    endif()
+endif()
+
+set(CMAKE_C_COMPILER                ${TOOLCHAIN_PREFIX}gcc${TOOLCHAIN_SUFFIX})
 set(CMAKE_ASM_COMPILER              ${CMAKE_C_COMPILER})
-set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}g++)
-set(CMAKE_LINKER                    ${TOOLCHAIN_PREFIX}g++)
-set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy)
-set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size)
+set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}g++${TOOLCHAIN_SUFFIX})
+set(CMAKE_LINKER                    ${TOOLCHAIN_PREFIX}g++${TOOLCHAIN_SUFFIX})
+set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy${TOOLCHAIN_SUFFIX})
+set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size${TOOLCHAIN_SUFFIX})
 
 set(CMAKE_EXECUTABLE_SUFFIX_ASM     ".elf")
 set(CMAKE_EXECUTABLE_SUFFIX_C       ".elf")

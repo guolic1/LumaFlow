@@ -9,7 +9,7 @@ firmware/
 ├── LumaFlow.code-workspace        # VS Code 工作区，以 firmware 为根目录
 ├── .vscode/                      # 编译、下载、调试和本地工具路径配置
 ├── CMakeLists.txt                 # 手工维护，组织固件目标和各子目录
-├── CMakePresets.json              # 顶层 Debug / Release 配置
+├── CMakePresets.json              # 镜像配置与 Debug / Release 编译选项
 ├── cmake/gcc-arm-none-eabi.cmake   # 顶层构建使用的工具链
 ├── application/
 │   ├── CMakeLists.txt             # 显式列出应用源码
@@ -35,6 +35,33 @@ firmware/
 应用使用 `application/application.ld`，需纳入版本管理；当前仍为从 `0x08000000` 开始的完整 64 KB Flash，尚未划分 Bootloader 区域。分区大小确定后，再分别调整应用和 Bootloader 的独立链接脚本。CubeMX 重新生成的 `.ld` 不会覆盖手工脚本，内存布局及堆栈预留需在手工脚本中维护。
 
 Bootloader 使用 `bootloader/bootloader.ld`，目前同样占用 `0x08000000` 起的 64 KB Flash 地址范围，RAM 为 8 KB，堆预留为 0，栈预留为 1 KB。两份镜像的地址范围重叠，目前只能分别下载运行，不能作为分区固件同时烧录。Bootloader 入口目前执行 `HAL_Init()`、`SystemClock_Config()` 后进入主循环，尚未实现升级或跳转到应用。
+
+## 选择配置和编译选项
+
+顶层 CMake 通过 `LUMAFLOW_IMAGE` 选择 `application`（默认）或 `bootloader`，每次构建只加入对应目录的 `main.c` 和 `.ld`。
+
+使用 Ninja Multi-Config，将镜像配置和编译选项分开选择：
+
+| 选择项 | 可选值 | VS Code 命令 |
+| --- | --- | --- |
+| 配置（Configure Preset） | `Application`、`Bootloader` | `CMake: Select Configure Preset` |
+| 编译选项（Build Preset） | `Debug`、`Release` | `CMake: Select Build Preset` |
+
+状态栏显示这两个选择入口，点击即可切换；随后三个按钮均使用当前选择。CMake Tools 会按当前配置过滤编译选项，显示 `Debug`、`Release`，以及扩展内置的 `[Default]`；请明确选择前两项之一。该行为见 [CMake Tools 官方说明](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/cmake-presets.md#cmake-select-build-preset)。
+
+Build Preset 在 JSON 内使用 `Application-Debug` 等唯一名称，界面显示名为 `Debug` 或 `Release`。输出 ELF 和 map 分别位于 `build/<配置>/<编译选项>/`，例如 `build/Bootloader/Debug/LumaFlow.elf`，四种组合互不覆盖。
+
+在 `firmware` 目录执行（`cmake` 需在 `PATH` 中，或使用本地配置里的完整路径）：
+
+```powershell
+cmake --preset Bootloader
+cmake --build build/Bootloader --config Debug --parallel
+# 等效编译命令：cmake --build --preset Bootloader-Debug --parallel
+```
+
+切换为 `Release` 时只改变编译选项，不需要重新选择镜像。`Debug` 使用 `-O0 -g3`，`Release` 使用 `-Os -g0`；源码单步调试请选择 `Debug`。代码补全由 CMake Tools 提供当前配置，下载与调试也从 CMake Tools 获取当前 ELF 路径。
+
+从旧配置迁移后，重新选择一次 Configure Preset 和 Build Preset。原 `build/Debug`、`build/Release`、`build/Bootloader-Debug` 等目录不再使用，可自行删除。
 
 Application 和 Bootloader 均通过 `board/cmake/stm32cubemx` 编译同一份 `board/startup_stm32g031xx.s`，分别链接到各自 ELF 中；无需在两个源码目录复制 startup，也不要在同一目标中重复添加。startup 提供向量表和 `Reset_Handler`，初始化栈、`.data`、`.bss` 及 C 运行环境后调用本镜像的 `main()`。后续实现 Bootloader 跳转时，应进入应用向量表中的复位入口，并配合应用中断向量表重定位，不能只直接调用应用 `main()`。
 
@@ -64,12 +91,12 @@ Application 和 Bootloader 均通过 `board/cmake/stm32cubemx` 编译同一份 `
 | `lumaflow.openocdPath` | `openocd.exe` 的完整路径 |
 | `lumaflow.openocdConfig` | 自行准备的 OpenOCD `.cfg` 文件的完整路径；暂不使用硬件时留空 |
 
-任务会将指定的工具链目录加入自己的 `PATH`，并显式传入 Ninja 路径。更换编译器后，应先清理 `firmware/build/Debug` 中的旧 CMake 缓存，再重新编译。新机器初次使用 CMake Tools 面板时，选择 `Debug` preset；三个状态栏按钮固定使用 Debug，避免下载与调试使用不同固件。
+工具链文件会读取 `.vscode/settings.json` 中的 `lumaflow.armToolchainPath` 和 `lumaflow.ninjaPath`，供 CMake Tools 和命令行共同使用，无需重复填写路径；此文件须使用标准 JSON。未提供本地配置时，从 `PATH` 查找工具。更换编译器后，对 `build/Application` 和 `build/Bootloader` 中已使用的构建目录清理缓存并重新配置。首次打开时，先选择 `Application` 配置和 `Debug` 编译选项。
 
 ## 三个按钮
 
 | 按钮 | 执行过程 |
 | --- | --- |
-| 编译 | `cmake --preset Debug`，然后 `cmake --build --preset Debug --parallel` |
-| 下载 | 检查本地调试路径 → 编译 → OpenOCD 写入 ELF、校验、复位运行、退出 |
-| 调试 | 检查本地调试路径 → 编译 → Cortex-Debug 启动 OpenOCD/GDB、下载并停在 `main` |
+| 编译 | 按当前 Configure Preset 配置，再按当前 Build Preset 编译 |
+| 下载 | 检查本地调试路径 → 编译当前选择 → OpenOCD 写入对应 ELF、校验、复位运行、退出 |
+| 调试 | 检查本地调试路径 → 编译当前选择 → Cortex-Debug 加载对应 ELF、下载并停在 `main` |
