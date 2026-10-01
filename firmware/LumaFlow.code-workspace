@@ -3,11 +3,11 @@
         { "path": "." }
     ],
     "settings": {
-        "cmake.sourceDirectory": "${workspaceFolder}/firmware",
+        "cmake.sourceDirectory": "${workspaceFolder}",
         "cmake.useCMakePresets": "always",
         "cmake.configureOnOpen": false,
         "cmake.options.statusBarVisibility": "hidden",
-        "C_Cpp.default.compileCommands": "${workspaceFolder}/firmware/build/Debug/compile_commands.json",
+        "C_Cpp.default.compileCommands": "${workspaceFolder}/build/Debug/compile_commands.json",
         "C_Cpp.default.intelliSenseMode": "windows-gcc-arm",
         "debug.saveBeforeStart": "allEditorsInActiveGroup",
         "task.saveBeforeRun": "always",

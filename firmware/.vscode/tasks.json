@@ -10,7 +10,7 @@
                 "-DCMAKE_MAKE_PROGRAM=${config:lumaflow.ninjaPath}"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/firmware",
+                "cwd": "${workspaceFolder}",
                 "env": {
                     "PATH": "${config:lumaflow.armToolchainPath};${env:PATH}"
                 }
@@ -24,7 +24,7 @@
             "command": "${config:cmake.cmakePath}",
             "args": ["--build", "--preset", "Debug", "--parallel"],
             "options": {
-                "cwd": "${workspaceFolder}/firmware",
+                "cwd": "${workspaceFolder}",
                 "env": {
                     "PATH": "${config:lumaflow.armToolchainPath};${env:PATH}"
                 }
@@ -54,7 +54,7 @@
                 "-f", "${config:lumaflow.openocdConfig}",
                 "-c", "program {build/Debug/LumaFlow.elf} verify reset exit"
             ],
-            "options": { "cwd": "${workspaceFolder}/firmware" },
+            "options": { "cwd": "${workspaceFolder}" },
             "dependsOn": ["LumaFlow: Check debug config", "LumaFlow: Build"],
             "dependsOrder": "sequence",
             "problemMatcher": [],
