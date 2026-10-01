@@ -36,6 +36,11 @@ add_executable(${CMAKE_PROJECT_NAME})
 # Add STM32CubeMX generated sources
 add_subdirectory(board/cmake/stm32cubemx)
 
+# Optimize across application and driver sources only in Release builds.
+set_property(TARGET ${CMAKE_PROJECT_NAME} STM32_Drivers PROPERTY
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE
+)
+
 # Select one entry point and linker script per build directory.
 set(LUMAFLOW_IMAGE "application" CACHE STRING "Firmware image to build")
 set_property(CACHE LUMAFLOW_IMAGE PROPERTY STRINGS application bootloader)

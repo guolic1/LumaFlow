@@ -59,7 +59,7 @@ cmake --build build/Bootloader --config Debug --parallel
 # 等效编译命令：cmake --build --preset Bootloader-Debug --parallel
 ```
 
-切换为 `Release` 时只改变编译选项，不需要重新选择镜像。`Debug` 使用 `-O0 -g3`，`Release` 使用 `-Os -g0`；源码单步调试请选择 `Debug`。代码补全由 CMake Tools 提供当前配置，下载与调试也从 CMake Tools 获取当前 ELF 路径。
+切换为 `Release` 时只改变编译选项，不需要重新选择镜像。`Debug` 使用 `-O0 -g3`，`Release` 使用 `-Os -g0`，并通过 CMake 的 `INTERPROCEDURAL_OPTIMIZATION_RELEASE` 为固件和 HAL/LL 驱动开启 LTO；源码单步调试请选择不启用 LTO 的 `Debug`。LTO 在链接阶段进行跨文件优化，仍会编译构建列表中的源文件。两种模式均保留未使用代码段的自动裁剪。代码补全由 CMake Tools 提供当前配置，下载与调试也从 CMake Tools 获取当前 ELF 路径。
 
 从旧配置迁移后，重新选择一次 Configure Preset 和 Build Preset。原 `build/Debug`、`build/Release`、`build/Bootloader-Debug` 等目录不再使用，可自行删除。
 
