@@ -36,6 +36,18 @@ add_executable(${CMAKE_PROJECT_NAME})
 # Add STM32CubeMX generated sources
 add_subdirectory(board/cmake/stm32cubemx)
 
+# Shared protocol sources are compiled into both images. Keeping the shared code
+# outside board/ prevents CubeMX regeneration from overwriting it.
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    common/platform/serial_uart.c
+    common/protocol/command_protocol.c
+    common/protocol/common_commands.c
+)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    common/platform
+    common/protocol
+)
+
 # Optimize across application and driver sources only in Release builds.
 set_property(TARGET ${CMAKE_PROJECT_NAME} STM32_Drivers PROPERTY
     INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE

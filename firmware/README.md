@@ -13,12 +13,19 @@ firmware/
 ├── cmake/gcc-arm-none-eabi.cmake   # 顶层构建使用的工具链
 ├── application/
 │   ├── CMakeLists.txt             # 显式列出应用源码
+│   ├── commands.c/.h              # Application 命令表
 │   ├── main.c                     # 应用入口 main()
 │   └── application.ld             # 手工维护的应用链接脚本
 ├── bootloader/
 │   ├── CMakeLists.txt             # 显式列出 Bootloader 源码
+│   ├── commands.c/.h              # Bootloader 命令表
+│   ├── jump_to_application.c/.h   # 应用检查与跳转
 │   ├── main.c                     # Bootloader 入口 main()
 │   └── bootloader.ld              # 手工维护的 Bootloader 链接脚本
+├── common/
+│   ├── platform/                  # USART1 适配
+│   └── protocol/                  # COBS、CRC16、命令分发和公共命令
+├── tests/                         # 可在主机运行的协议测试
 └── board/                        # CubeMX 工程与全部生成内容
     ├── LumaFlow.ioc
     ├── .mxproject
@@ -41,7 +48,43 @@ firmware/
 
 两份镜像的 RAM 均从 `0x20000000` 开始，容量为 8 KB，堆预留为 0，栈预留为 1 KB；尚未单独预留升级元数据区域。链接器按各自 Flash 分区限制镜像大小。CubeMX 重新生成的 `.ld` 不会覆盖手工脚本，内存布局及堆栈预留需在手工脚本中维护。
 
-Bootloader 入口目前执行 LL 基础初始化、引脚重映射及 `SystemClock_Config()` 后进入空循环，尚未实现 200 ms 串口握手、升级或跳转到应用。两份镜像现在可以按各自地址共存，但普通复位仍从 Bootloader 启动，不会自动进入 Application；仅下载 Application 后复位也不能直接启动它。独立调试应用需由调试器从该 ELF 的 `Reset_Handler` 启动。
+Bootloader 每次复位都会初始化 USART1 并等待 200 ms：收到一帧 CRC 正确的命令后停留在命令模式，否则在应用向量表有效时清理外设状态并跳转到 Application；应用向量无效时永久停留在命令模式，从而保留串口重刷入口。Application 的 `ENTER_BOOTLOADER` 命令会在响应完成后执行软件复位，上位机需要在新的 200 ms 窗口内发送合法命令。应用有效性目前只检查初始栈和复位入口范围，尚未加入整镜像 CRC、升级元数据和 Flash 写入命令。
+
+## 串口命令协议
+
+Application 和 Bootloader 分别链接 `common/` 下的同一份协议与 USART 适配源码，各自提供独立命令表。共享代码不会放在 Application Flash 中，因此应用缺失或损坏时不影响 Bootloader 串口恢复能力。
+
+USART1 使用 `115200 8N1`、RX 中断和 256 字节环形缓冲区；TX 当前采用轮询发送。协议不使用动态内存，最大 payload 为 128 字节。线上帧为 `COBS(raw_frame) + 0x00`，多字节整数均为小端：
+
+| raw frame 字段 | 长度 | 说明 |
+| --- | --- | --- |
+| version | 1 | 当前为 `1` |
+| flags | 1 | bit 0 为 `1` 表示响应 |
+| sequence | 1 | 响应回显请求序号 |
+| command | 1 | 命令编号 |
+| status | 1 | 请求必须为 `0`，响应为状态码 |
+| payload length | 2 | payload 字节数 |
+| payload | 0～128 | 命令数据 |
+| CRC16-CCITT | 2 | 初值 `0xFFFF`，覆盖此前全部 raw frame 字节 |
+
+当前命令如下：
+
+| ID | 命令 | Bootloader | Application | 说明 |
+| --- | --- | --- | --- | --- |
+| `0x01` | `PING` | 是 | 是 | 原样返回最多 32 字节 payload |
+| `0x02` | `GET_INFO` | 是 | 是 | 返回协议、镜像和能力信息 |
+| `0x10` | `ENTER_BOOTLOADER` | 否 | 是 | 响应完成后软件复位，主机随后重新握手 |
+| `0x11` | `BOOT_APPLICATION` | 是 | 否 | 应用向量表有效时响应并跳转 |
+
+`GET_INFO` 的 12 字节 payload 依次为：协议版本、镜像类型、固件主/次/补丁版本、保留字节、最大 payload（2 字节）、能力位（4 字节）。镜像类型 `1` 表示 Bootloader，`2` 表示 Application。
+
+协议核心的主机测试位于 `tests/`，可独立配置并运行：
+
+```powershell
+cmake -S tests -B build/ProtocolTests -G Ninja
+cmake --build build/ProtocolTests
+ctest --test-dir build/ProtocolTests --output-on-failure
+```
 
 ## 选择配置和编译选项
 
