@@ -49,8 +49,7 @@
 *****************************************************************************
 */
 
-/* Hand-maintained bootloader script. Flash partitioning is not configured yet;
-   this standalone image currently overlaps application/application.ld. */
+/* Bootloader occupies the first 8 KB; the application starts at 0x08002000. */
 
 /* Entry Point */
 ENTRY(Reset_Handler)
@@ -59,7 +58,7 @@ ENTRY(Reset_Handler)
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 8K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 64K
+FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 8K
 }
 
 /* Highest address of the user mode stack */

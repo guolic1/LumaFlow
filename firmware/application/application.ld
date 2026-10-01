@@ -49,6 +49,8 @@
 *****************************************************************************
 */
 
+/* Application follows the 8 KB bootloader and uses the remaining 56 KB. */
+
 /* Entry Point */
 ENTRY(Reset_Handler)
 
@@ -56,7 +58,7 @@ ENTRY(Reset_Handler)
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 8K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 64K
+FLASH (rx)      : ORIGIN = 0x08002000, LENGTH = 56K
 }
 
 /* Highest address of the user mode stack */
