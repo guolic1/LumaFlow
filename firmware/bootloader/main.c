@@ -17,12 +17,12 @@ static void bootloader_gpio_init(void)
                            LL_IOP_GRP1_PERIPH_GPIOC | LL_IOP_GRP1_PERIPH_GPIOF);
 
     /* Change only the pulls on the two matrix pins shared with SWD. */
-    LL_GPIO_SetPinPull(IO10_GPIO_Port, IO10_Pin, LL_GPIO_PULL_UP);
-    LL_GPIO_SetPinPull(IO11_GPIO_Port, IO11_Pin, LL_GPIO_PULL_UP);
+    LL_GPIO_SetPinPull(IO10_GPIO_Port, IO10_Pin, LL_GPIO_PULL_DOWN);
+    LL_GPIO_SetPinPull(IO11_GPIO_Port, IO11_Pin, LL_GPIO_PULL_DOWN);
 
     /* Release the remaining matrix pins without changing USART1 pins. */
     gpio.Mode = LL_GPIO_MODE_INPUT;
-    gpio.Pull = LL_GPIO_PULL_UP;
+    gpio.Pull = LL_GPIO_PULL_DOWN;
     gpio.Pin = IO0_Pin | IO1_Pin | IO2_Pin | IO3_Pin | IO4_Pin | IO5_Pin |
                IO8_Pin | IO12_Pin;
     LL_GPIO_Init(GPIOA, &gpio);
