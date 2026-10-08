@@ -121,6 +121,10 @@ USART1 使用 `1000000 8N1`，Bootloader 和 Application 共用 CubeMX 生成的
 
 响应状态码新增 `6`（参数错误）、`7`（Flash 操作错误）和 `8`（镜像校验错误）。Flash 操作错误或校验错误会将升级状态置为 failed，需要重新发送 `BEGIN_UPDATE` 从擦除开始；参数或顺序错误可根据 `GET_UPDATE_STATUS` 返回的 `next_offset` 修正后继续。
 
+串口通信和 Application OTA 上位机工具位于 `scripts/lumaflow.ps1`，使用 PowerShell 和 .NET，
+无需第三方模块。支持查询串口、PING、设备信息、进入 Bootloader、查询升级状态、升级 `.bin` 和启动 Application。
+参数、镜像转换、使用示例及失败恢复步骤见 [scripts/README.md](scripts/README.md)。
+
 协议核心的主机测试位于 `tests/`，可独立配置并运行：
 
 ```powershell

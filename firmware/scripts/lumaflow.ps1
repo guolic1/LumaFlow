@@ -5,15 +5,20 @@ Communicate with LumaFlow firmware over USART1 (2000000 8N1).
 pwsh -File scripts/lumaflow.ps1 -Command info -Port COM3
 .EXAMPLE
 pwsh -File scripts/lumaflow.ps1 -Command ping -Port COM3 -Text hello
+.EXAMPLE
+pwsh -File scripts/lumaflow.ps1 -Command ota -Port COM3 -Image application.bin -FirmwareVersion 1
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status')]
+    [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota')]
     [string]$Command = 'info',
     [string]$Port,
     [ValidateRange(1, 10000000)][int]$BaudRate = 2000000,
     [ValidateRange(1, 60000)][int]$TimeoutMs = 2000,
-    [string]$Text = 'LumaFlow'
+    [string]$Text = 'LumaFlow',
+    [string]$Image,
+    [uint32]$FirmwareVersion = 0,
+    [switch]$NoBoot
 )
 
 function Get-Crc16([byte[]]$Data, [int]$Length = $Data.Length) {
@@ -122,7 +127,10 @@ function Invoke-SerialCommand(
     while ($timer.ElapsedMilliseconds -lt $TimeoutMs) {
         $Client.Port.ReadTimeout = [Math]::Max(1, $TimeoutMs - [int]$timer.ElapsedMilliseconds)
         try { $value = $Client.Port.ReadByte() }
-        catch [TimeoutException] { break }
+        catch {
+            if ($_.Exception.GetBaseException() -is [TimeoutException]) { break }
+            throw
+        }
         if ($value -lt 0) { throw [IO.IOException]::new('Serial port closed while reading.') }
         if ($value -ne 0) {
             if (-not $Client.Discard) {
@@ -199,17 +207,125 @@ function Get-DeviceUpdateStatus($Client, [int]$TimeoutMs = 2000) {
     }
 }
 
+function Get-Crc32([byte[]]$Data) {
+    $crc = [uint32]0xFFFFFFFFL
+    foreach ($value in $Data) {
+        $crc = $crc -bxor [uint32]$value
+        for ($bit = 0; $bit -lt 8; $bit++) {
+            if ($crc -band 1) { $crc = ($crc -shr 1) -bxor [uint32]0xEDB88320L }
+            else { $crc = $crc -shr 1 }
+        }
+    }
+    return [uint32]($crc -bxor [uint32]0xFFFFFFFFL)
+}
+
+function Assert-ApplicationImage([byte[]]$Data) {
+    if ($Data.Length -lt 8 -or $Data.Length -gt 57312) {
+        throw 'Application image size must be 8..57312 bytes.'
+    }
+    $stack = [BitConverter]::ToUInt32($Data, 0)
+    $reset = [BitConverter]::ToUInt32($Data, 4)
+    $address = $reset -band 0xFFFFFFFEL
+    if ($stack -lt 0x20000000 -or $stack -gt 0x20002000 -or ($stack -band 7) -ne 0 -or
+        ($reset -band 1) -eq 0 -or $address -lt 0x08002008 -or $address -ge 0x08002000 + $Data.Length) {
+        throw 'Invalid Application vector: expected aligned SRAM stack and Thumb reset entry inside the image at 0x08002000.'
+    }
+}
+
+function Read-ApplicationImage([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path) -or [IO.Path]::GetExtension($Path) -ine '.bin') {
+        throw 'OTA requires -Image pointing to an Application .bin file (not ELF, HEX or Bootloader).'
+    }
+    $resolved = (Get-Item -LiteralPath $Path -ErrorAction Stop).FullName
+    $stream = [IO.File]::OpenRead($resolved)
+    try {
+        if ($stream.Length -lt 8 -or $stream.Length -gt 57312) {
+            throw 'Application image size must be 8..57312 bytes.'
+        }
+        $data = [byte[]]::new([int]$stream.Length)
+        $offset = 0
+        while ($offset -lt $data.Length) {
+            $read = $stream.Read($data, $offset, $data.Length - $offset)
+            if ($read -eq 0) { throw 'Unexpected end of Application file.' }
+            $offset += $read
+        }
+        Assert-ApplicationImage $data
+        return ,$data
+    } finally { $stream.Dispose() }
+}
+
+function Invoke-ApplicationUpdate(
+    $Client, [byte[]]$Data, [uint32]$FirmwareVersion,
+    [int]$TimeoutMs = 2000, [switch]$NoBoot
+) {
+    Assert-ApplicationImage $Data
+    $crc = Get-Crc32 $Data
+    $info = Enter-DeviceBootloader $Client $TimeoutMs
+    if (($info.Capabilities -band 4) -eq 0 -or $info.MaxPayload -lt 12) {
+        throw 'Bootloader does not support the Application update protocol.'
+    }
+    $status = Get-DeviceUpdateStatus $Client $TimeoutMs
+    if ($status.State -eq 'receiving') {
+        throw 'An update is already receiving; reset the board before starting a new OTA.'
+    }
+    Write-Host ('Updating {0} bytes, CRC32 0x{1:X8}, firmware version {2}.' -f $Data.Length, $crc, $FirmwareVersion)
+    $begin = [BitConverter]::GetBytes([uint32]$Data.Length) + [BitConverter]::GetBytes($crc) + [BitConverter]::GetBytes($FirmwareVersion)
+    # Erasing 28 flash pages and verifying the full image need a longer deadline.
+    $flashTimeout = [Math]::Max(10000, $TimeoutMs)
+    $reply = Invoke-SerialCommand $Client 0x20 $begin $flashTimeout
+    if ($reply.Length -ne 8 -or [BitConverter]::ToUInt32($reply, 4) -ne 0) {
+        throw 'Invalid BEGIN_UPDATE response/initial offset.'
+    }
+    $maxChunk = [BitConverter]::ToUInt16($reply, 0)
+    $chunkSize = [Math]::Min(120, [Math]::Min($maxChunk, $info.MaxPayload - 4))
+    $chunkSize -= $chunkSize % 8
+    if ($chunkSize -lt 8) { throw 'Invalid Bootloader chunk limit.' }
+    $offset = 0
+    try {
+        while ($offset -lt $Data.Length) {
+            $count = [Math]::Min($chunkSize, $Data.Length - $offset)
+            $chunk = [byte[]]::new(4 + $count)
+            [Array]::Copy([BitConverter]::GetBytes([uint32]$offset), 0, $chunk, 0, 4)
+            [Array]::Copy($Data, $offset, $chunk, 4, $count)
+            $reply = Invoke-SerialCommand $Client 0x21 $chunk $TimeoutMs
+            if ($reply.Length -ne 4 -or [BitConverter]::ToUInt32($reply, 0) -ne $offset + $count) {
+                throw "Invalid WRITE_CHUNK next offset at $offset."
+            }
+            $offset += $count
+            Write-Progress -Activity 'LumaFlow OTA' -Status "$offset / $($Data.Length) bytes" -PercentComplete (100 * $offset / $Data.Length)
+        }
+        $reply = Invoke-SerialCommand $Client 0x22 -TimeoutMs $flashTimeout
+        if ($reply.Length -ne 0) { throw 'Invalid END_UPDATE response.' }
+        $status = Get-DeviceUpdateStatus $Client $TimeoutMs
+        if ($status.State -ne 'complete' -or $status.LastResult -ne 'OK' -or
+            $status.NextOffset -ne $Data.Length -or $status.ImageSize -ne $Data.Length) {
+            throw 'Device did not confirm a complete Application update.'
+        }
+        Write-Host 'Application image verified and committed.'
+        if (-not $NoBoot) {
+            $reply = Invoke-SerialCommand $Client 0x11 -TimeoutMs $TimeoutMs
+            if ($reply.Length -ne 0) { throw 'Invalid BOOT_APPLICATION response.' }
+            Write-Host 'Application boot requested.'
+        }
+    } finally { Write-Progress -Activity 'LumaFlow OTA' -Completed }
+}
+
 # Dot sourcing exposes the protocol functions to host tests without opening a port.
 if ($MyInvocation.InvocationName -ne '.') {
     $ErrorActionPreference = 'Stop'
     Set-StrictMode -Version Latest
     $serialPort = $null
     try {
+        if ($Command -ne 'ota' -and ($NoBoot -or $PSBoundParameters.ContainsKey('Image') -or
+            $PSBoundParameters.ContainsKey('FirmwareVersion'))) {
+            throw '-Image, -FirmwareVersion and -NoBoot apply only to ota.'
+        }
         if ($Command -eq 'ports') {
             [IO.Ports.SerialPort]::GetPortNames() | Sort-Object
             exit 0
         }
         if ([string]::IsNullOrWhiteSpace($Port)) { throw '-Port is required (for example COM3).' }
+        if ($Command -eq 'ota') { $imageData = Read-ApplicationImage $Image }
         $payload = [Text.Encoding]::UTF8.GetBytes($Text)
         if ($Command -eq 'ping' -and $payload.Length -gt 32) { throw 'PING text must be at most 32 UTF-8 bytes.' }
         $serialPort = [IO.Ports.SerialPort]::new($Port, $BaudRate, [IO.Ports.Parity]::None, 8, [IO.Ports.StopBits]::One)
@@ -236,6 +352,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 Write-Output 'Application boot requested.'
             }
             'status' { Get-DeviceUpdateStatus $client $TimeoutMs }
+            'ota' { Invoke-ApplicationUpdate $client $imageData $FirmwareVersion $TimeoutMs -NoBoot:$NoBoot }
         }
     } catch {
         [Console]::Error.WriteLine($_.Exception.Message)
