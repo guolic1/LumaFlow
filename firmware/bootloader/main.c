@@ -9,6 +9,31 @@
 
 extern void SystemClock_Config(void);
 
+static void bootloader_gpio_init(void)
+{
+    LL_GPIO_InitTypeDef gpio = {0};
+
+    LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOA | LL_IOP_GRP1_PERIPH_GPIOB |
+                           LL_IOP_GRP1_PERIPH_GPIOC | LL_IOP_GRP1_PERIPH_GPIOF);
+
+    /* Release the LED matrix without changing SWD or USART1 pins. */
+    gpio.Mode = LL_GPIO_MODE_INPUT;
+    gpio.Pull = LL_GPIO_PULL_DOWN;
+    gpio.Pin = IO0_Pin | IO1_Pin | IO2_Pin | IO3_Pin | IO4_Pin | IO5_Pin |
+               IO8_Pin | IO12_Pin;
+    LL_GPIO_Init(GPIOA, &gpio);
+
+    gpio.Pin = IO6_Pin | IO7_Pin | IO13_Pin | IO14_Pin | IO15_Pin | IO17_Pin;
+    LL_GPIO_Init(GPIOB, &gpio);
+
+    gpio.Pin = IO9_Pin;
+    LL_GPIO_Init(GPIOC, &gpio);
+
+    /* PF2 is usable as IO16 only when NRST_MODE is configured for GPIO. */
+    gpio.Pin = IO16_Pin;
+    LL_GPIO_Init(GPIOF, &gpio);
+}
+
 static bool wait_for_command(command_server_t *server, uint32_t timeout_ms)
 {
     uint32_t elapsed_ms = 0U;
@@ -45,6 +70,7 @@ int main(void)
 
     SystemClock_Config();
 
+    bootloader_gpio_init();
     MX_DMA_Init();
     serial_uart_init();
     bootloader_commands_init(&command_server);
