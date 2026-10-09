@@ -20,21 +20,27 @@ static void bootloader_gpio_init(void)
     LL_GPIO_SetPinPull(IO10_GPIO_Port, IO10_Pin, LL_GPIO_PULL_NO);
     LL_GPIO_SetPinPull(IO11_GPIO_Port, IO11_Pin, LL_GPIO_PULL_NO);
 
-    /* Release the remaining matrix pins without changing USART1 pins. */
-    gpio.Mode = LL_GPIO_MODE_INPUT;
+    /* Set ODR before enabling open-drain output so the matrix stays released. */
+    gpio.Mode = LL_GPIO_MODE_OUTPUT;
+    gpio.OutputType = LL_GPIO_OUTPUT_OPENDRAIN;
+    gpio.Speed = LL_GPIO_SPEED_FREQ_LOW;
     gpio.Pull = LL_GPIO_PULL_NO;
     gpio.Pin = IO0_Pin | IO1_Pin | IO2_Pin | IO3_Pin | IO4_Pin | IO5_Pin |
                IO8_Pin | IO12_Pin;
+    LL_GPIO_SetOutputPin(GPIOA, gpio.Pin);
     LL_GPIO_Init(GPIOA, &gpio);
 
     gpio.Pin = IO6_Pin | IO7_Pin | IO13_Pin | IO14_Pin | IO15_Pin | IO17_Pin;
+    LL_GPIO_SetOutputPin(GPIOB, gpio.Pin);
     LL_GPIO_Init(GPIOB, &gpio);
 
     gpio.Pin = IO9_Pin;
+    LL_GPIO_SetOutputPin(GPIOC, gpio.Pin);
     LL_GPIO_Init(GPIOC, &gpio);
 
     /* PF2 is usable as IO16 only when NRST_MODE is configured for GPIO. */
     gpio.Pin = IO16_Pin;
+    LL_GPIO_SetOutputPin(GPIOF, gpio.Pin);
     LL_GPIO_Init(GPIOF, &gpio);
 }
 

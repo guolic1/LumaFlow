@@ -3,10 +3,25 @@
 #include "commands.h"
 #include "dma.h"
 #include "i2c.h"
-#include "gpio.h"
 #include "serial_uart.h"
 
 extern void SystemClock_Config(void);
+
+static void application_matrix_swd_pins_init(void)
+{
+    LL_GPIO_InitTypeDef gpio = {0};
+
+    LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOA);
+
+    /* The other matrix pins retain their Bootloader configuration. */
+    gpio.Pin = IO10_Pin | IO11_Pin;
+    LL_GPIO_SetOutputPin(GPIOA, gpio.Pin);
+    gpio.Mode = LL_GPIO_MODE_OUTPUT;
+    gpio.OutputType = LL_GPIO_OUTPUT_OPENDRAIN;
+    gpio.Speed = LL_GPIO_SPEED_FREQ_LOW;
+    gpio.Pull = LL_GPIO_PULL_NO;
+    LL_GPIO_Init(GPIOA, &gpio);
+}
 
 int main(void)
 {
@@ -23,7 +38,7 @@ int main(void)
 
     SystemClock_Config();
 
-    MX_GPIO_Init();
+    application_matrix_swd_pins_init();
     MX_DMA_Init();
     MX_ADC1_Init();
     MX_I2C1_Init();

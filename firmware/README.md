@@ -51,7 +51,9 @@ firmware/
 
 两份镜像的 RAM 均从 `0x20000000` 开始，容量为 8 KB，堆预留为 0，栈预留为 1 KB。Application 链接脚本只允许使用前 57312 字节，防止链接结果覆盖末尾元数据。元数据与镜像尾部共享最后一个 2 KB 擦除页，但不会占用额外页。CubeMX 重新生成的 `.ld` 不会覆盖手工脚本，内存布局及堆栈预留需在手工脚本中维护。
 
-Bootloader 启动时将全部 LED 矩阵引脚 IO0–IO17 配置为无内部上下拉。其中 IO0–IO9、IO12–IO17 配置为输入模式，不主动输出高低电平；IO10/IO11（PA13/PA14）只修改上下拉，保留 SWD 模式，USART1 引脚保持串口用途。跳转时不清理矩阵 GPIO，随后由 Application 的 `MX_GPIO_Init()` 重新配置非 SWD 矩阵引脚。IO16（PF2）用作 GPIO 需要事先配置 OB 的 `NRST_MODE=2`，Bootloader 不自动写入 OB。PF2 板载 5.1 kΩ 上拉仍然存在，SWD 通信时 PA13/PA14 仍会切换电平；该配置仅在 Bootloader 执行后生效。
+Bootloader 启动时将 LED 矩阵的 IO0–IO9、IO12–IO17 配置为开漏输出、无内部上下拉，切换输出模式前先将输出锁存器置 1，避免初始化时主动拉低。IO10/IO11（PA13/PA14）在 Bootloader 中保留 SWD 模式、无内部上下拉，USART1 引脚保持串口用途。跳转时不清理矩阵 GPIO；Application 不调用 `MX_GPIO_Init()`，继承其余矩阵引脚配置，并将 PA13/PA14 切换为同样的开漏输出、无内部上下拉、输出锁存器为 1，此时 SWD 不再可用。独立启动 Application 不会补齐其余矩阵引脚的初始化；需通过配套 Bootloader 启动。移除 `MX_GPIO_Init()` 后，也不再执行其中的 SENSE_EN 和 IMU_INT/EXTI 初始化，ADC、I2C、USART1 各自的初始化保留。
+
+开漏输出的“初始高电平”是输出锁存器为 1、引脚释放为高阻，不会主动驱动 3.3 V，实际电平取决于外部电路。IO16（PF2）用作 GPIO 需要事先配置 OB 的 `NRST_MODE=2`，Bootloader 不自动写入 OB；PF2 板载 5.1 kΩ 上拉仍然存在。这些 GPIO 配置仅在对应固件执行后生效。
 
 Bootloader 每次复位都会初始化 USART1；Application 校验有效时等待 3 秒，期间收到一帧 CRC 正确的命令后停留在命令模式，否则在超时后清理外设状态并跳转到 Application。提交标记、元数据、初始栈、复位入口或整镜像 CRC32 任一校验失败时，Bootloader 会永久停留在命令模式，从而保留串口重刷入口。Application 的 `ENTER_BOOTLOADER` 命令会在响应完成后执行软件复位，上位机需要在新的 3 秒窗口内发送合法命令。
 
