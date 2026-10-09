@@ -5,7 +5,7 @@
 #include "jump_to_application.h"
 #include "serial_uart.h"
 
-#define BOOTLOADER_COMMAND_WINDOW_MS 200U
+#define BOOTLOADER_COMMAND_WINDOW_MS 3000U
 
 extern void SystemClock_Config(void);
 

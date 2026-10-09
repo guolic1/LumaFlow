@@ -53,7 +53,7 @@ firmware/
 
 Bootloader 启动时将全部 LED 矩阵引脚 IO0–IO17 配置为无内部上下拉。其中 IO0–IO9、IO12–IO17 配置为输入模式，不主动输出高低电平；IO10/IO11（PA13/PA14）只修改上下拉，保留 SWD 模式，USART1 引脚保持串口用途。跳转时不清理矩阵 GPIO，随后由 Application 的 `MX_GPIO_Init()` 重新配置非 SWD 矩阵引脚。IO16（PF2）用作 GPIO 需要事先配置 OB 的 `NRST_MODE=2`，Bootloader 不自动写入 OB。PF2 板载 5.1 kΩ 上拉仍然存在，SWD 通信时 PA13/PA14 仍会切换电平；该配置仅在 Bootloader 执行后生效。
 
-Bootloader 每次复位都会初始化 USART1 并等待 200 ms：收到一帧 CRC 正确的命令后停留在命令模式，否则仅在提交标记、元数据、初始栈、复位入口和整镜像 CRC32 全部有效时清理外设状态并跳转到 Application；任一条件失败都会永久停留在命令模式，从而保留串口重刷入口。Application 的 `ENTER_BOOTLOADER` 命令会在响应完成后执行软件复位，上位机需要在新的 200 ms 窗口内发送合法命令。
+Bootloader 每次复位都会初始化 USART1；Application 校验有效时等待 3 秒，期间收到一帧 CRC 正确的命令后停留在命令模式，否则在超时后清理外设状态并跳转到 Application。提交标记、元数据、初始栈、复位入口或整镜像 CRC32 任一校验失败时，Bootloader 会永久停留在命令模式，从而保留串口重刷入口。Application 的 `ENTER_BOOTLOADER` 命令会在响应完成后执行软件复位，上位机需要在新的 3 秒窗口内发送合法命令。
 
 元数据采用以下固定布局，多字节字段均为小端：
 
