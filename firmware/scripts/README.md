@@ -2,7 +2,7 @@
 
 `lumaflow.ps1` 使用 PowerShell 和 .NET `System.IO.Ports.SerialPort`，无需第三方模块。
 面向 Windows，可用 Windows PowerShell 5.1 或 PowerShell 7 执行；以下命令在 `firmware/` 目录运行。
-默认串口配置为固件 USART1 的 `2000000 8N1`、无流控；USB 串口适配器需要支持 2 Mbps。
+默认串口配置为固件 USART1 的 `1000000 8N1`、无流控；USB 串口适配器需要支持 1 Mbps。
 
 ```powershell
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command ports
@@ -14,7 +14,7 @@ pwsh -NoProfile -File scripts/lumaflow.ps1 -Command boot-application -Port COM3
 ```
 
 使用 Windows PowerShell 时将 `pwsh` 换成 `powershell`。
-`-TimeoutMs` 默认 2000，范围为 1～60000；`-BaudRate` 默认 2000000，仅用于匹配自定义固件。
+`-TimeoutMs` 默认 2000，范围为 1～60000；`-BaudRate` 默认 1000000，可用于匹配旧版或自定义固件。
 `ping` 以 UTF-8 编码 `-Text`，最多 32 字节，并核对回显。
 `info` 显示当前镜像类型、代码中的版本、最大 payload 和能力位；`status` 仅 Bootloader 支持。
 `enter-bootloader` 会判断当前镜像，在 Application 下发复位命令后立即使用短超时重新握手。
@@ -64,4 +64,4 @@ pwsh -NoProfile -File scripts/tests/ota_test.ps1
 
 OTA 测试包括协议测试、复位后丢失一次探测、完整/最大镜像、块大小协商、非对齐末块、
 不启动模式、输入校验、丢失 ACK、错误偏移、Flash/CRC 错误、错误响应和提交状态异常。
-模拟测试不能证明 USB 串口驱动的 2 Mbps 支持、真实复位窗口或 Flash 擦写；这些需要开发板实测。
+模拟测试不能证明 USB 串口驱动的 1 Mbps 支持、真实复位窗口或 Flash 擦写；这些需要开发板实测。

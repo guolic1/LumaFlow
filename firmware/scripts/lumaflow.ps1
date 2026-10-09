@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Communicate with LumaFlow firmware over USART1 (2000000 8N1).
+Communicate with LumaFlow firmware over USART1 (1000000 8N1).
 .EXAMPLE
 pwsh -File scripts/lumaflow.ps1 -Command info -Port COM3
 .EXAMPLE
@@ -13,7 +13,7 @@ param(
     [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota')]
     [string]$Command = 'info',
     [string]$Port,
-    [ValidateRange(1, 10000000)][int]$BaudRate = 2000000,
+    [ValidateRange(1, 10000000)][int]$BaudRate = 1000000,
     [ValidateRange(1, 60000)][int]$TimeoutMs = 2000,
     [string]$Text = 'LumaFlow',
     [string]$Image,
@@ -183,7 +183,7 @@ function Enter-DeviceBootloader($Client, [int]$TimeoutMs = 2000) {
     $reply = Invoke-SerialCommand $Client 0x10 -TimeoutMs $TimeoutMs
     if ($reply.Length -ne 0) { throw 'Invalid ENTER_BOOTLOADER response.' }
     # Start immediately, retry only GET_INFO, and delimit any request cut by reset.
-    # Keeping each attempt under 200 ms catches the bootloader command window.
+    # Short attempts catch the bootloader command window without waiting for reset.
     $timer = [Diagnostics.Stopwatch]::StartNew()
     while ($timer.ElapsedMilliseconds -lt $TimeoutMs) {
         $Client.Port.Write([byte[]]@(0), 0, 1)
