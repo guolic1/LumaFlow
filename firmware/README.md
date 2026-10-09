@@ -57,6 +57,8 @@ Bootloader 启动时将 LED 矩阵的 IO0–IO9、IO12–IO17 配置为开漏输
 
 Bootloader 每次复位都会初始化 USART1；Application 校验有效时等待 3 秒，期间收到一帧 CRC 正确的命令后停留在命令模式，否则在超时后清理外设状态并跳转到 Application。提交标记、元数据、初始栈、复位入口或整镜像 CRC32 任一校验失败时，Bootloader 会永久停留在命令模式，从而保留串口重刷入口。Application 的 `ENTER_BOOTLOADER` 命令会在响应完成后执行软件复位，上位机需要在新的 3 秒窗口内发送合法命令。
 
+Bootloader 使用独立的时钟初始化：HSI16 直接提供 16 MHz SYSCLK，AHB/APB 均不分频，PLL 关闭，并按 16 MHz 配置 `SystemCoreClock` 和 1 ms SysTick，保持 3 秒等待窗口。Application 仍使用 CubeMX 生成的 `SystemClock_Config()`，运行在 64 MHz。
+
 元数据采用以下固定布局，多字节字段均为小端：
 
 | 偏移 | 长度 | 字段 | 说明 |
@@ -78,7 +80,7 @@ Bootloader 每次复位都会初始化 USART1；Application 校验有效时等�
 
 Application 和 Bootloader 分别链接 `common/` 下的同一份协议与 USART 适配源码，各自提供独立命令表。共享代码不会放在 Application Flash 中，因此应用缺失或损坏时不影响 Bootloader 串口恢复能力。
 
-USART1 使用 `2000000 8N1`。RX 采用循环 DMA，并通过 DMA 半传输、传输完成和 USART IDLE 中断把数据写入 256 字节软件环形缓冲区；TX 使用普通模式 DMA。协议不使用动态内存，最大 payload 为 128 字节。线上帧为 `COBS(raw_frame) + 0x00`，多字节整数均为小端：
+USART1 使用 `1000000 8N1`，Bootloader 和 Application 共用 CubeMX 生成的 USART 初始化，均采用 PCLK1 时钟、预分频 DIV1、16 倍过采样。Bootloader 的 PCLK1 为 16 MHz，波特率寄存器 BRR 为 `0x10`；Application 的 PCLK1 为 64 MHz，BRR 为 `0x40`。上位机应同步使用 1000000 bps。RX 采用循环 DMA，并通过 DMA 半传输、传输完成和 USART IDLE 中断把数据写入 256 字节软件环形缓冲区；TX 使用普通模式 DMA。协议不使用动态内存，最大 payload 为 128 字节。线上帧为 `COBS(raw_frame) + 0x00`，多字节整数均为小端：
 
 | raw frame 字段 | 长度 | 说明 |
 | --- | --- | --- |

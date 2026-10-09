@@ -7,7 +7,36 @@
 
 #define BOOTLOADER_COMMAND_WINDOW_MS 3000U
 
-extern void SystemClock_Config(void);
+static void bootloader_clock_init(void)
+{
+    LL_RCC_HSI_Enable();
+    while (LL_RCC_HSI_IsReady() == 0U)
+    {
+    }
+
+    LL_RCC_SetHSIDiv(LL_RCC_HSI_DIV_1);
+    LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_HSI);
+    while (LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_HSI)
+    {
+    }
+
+    /* Stop the PLL only after SYSCLK has switched to HSI16. */
+    LL_RCC_PLL_Disable();
+    while (LL_RCC_PLL_IsReady() != 0U)
+    {
+    }
+
+    LL_RCC_SetAHBPrescaler(LL_RCC_SYSCLK_DIV_1);
+    LL_RCC_SetAPB1Prescaler(LL_RCC_APB1_DIV_1);
+
+    if (LL_SetFlashLatency(HSI_VALUE) != SUCCESS)
+    {
+        Error_Handler();
+    }
+
+    LL_SetSystemCoreClock(HSI_VALUE);
+    LL_Init1msTick(HSI_VALUE);
+}
 
 static void bootloader_gpio_init(void)
 {
@@ -78,7 +107,7 @@ int main(void)
     LL_SYSCFG_EnablePinRemap(LL_SYSCFG_PIN_RMP_PA11);
     LL_SYSCFG_EnablePinRemap(LL_SYSCFG_PIN_RMP_PA12);
 
-    SystemClock_Config();
+    bootloader_clock_init();
 
     bootloader_gpio_init();
     MX_DMA_Init();
