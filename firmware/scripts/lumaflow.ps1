@@ -2,6 +2,8 @@
 .SYNOPSIS
 Communicate with LumaFlow firmware over USART1 (1000000 8N1).
 .EXAMPLE
+pwsh -File scripts/lumaflow.ps1 -Help
+.EXAMPLE
 pwsh -File scripts/lumaflow.ps1 -Command info -Port COM3
 .EXAMPLE
 pwsh -File scripts/lumaflow.ps1 -Command ping -Port COM3 -Text hello
@@ -18,7 +20,8 @@ param(
     [string]$Text = 'LumaFlow',
     [string]$Image,
     [uint32]$FirmwareVersion = 0,
-    [switch]$NoBoot
+    [switch]$NoBoot,
+    [Alias('h')][switch]$Help
 )
 
 function Get-Crc16([byte[]]$Data, [int]$Length = $Data.Length) {
@@ -316,6 +319,48 @@ if ($MyInvocation.InvocationName -ne '.') {
     Set-StrictMode -Version Latest
     $serialPort = $null
     try {
+        if ($Help) {
+            Write-Output @'
+LumaFlow serial communication and Application OTA
+
+Usage:
+  powershell -NoProfile -File scripts/lumaflow.ps1 -Help
+  powershell -NoProfile -File scripts/lumaflow.ps1 -Command <name> [options]
+
+Commands (-Command defaults to info):
+  ports              List available serial ports; no -Port required.
+  info               Show device image, version and capabilities.
+  ping               Send UTF-8 text and check the echo.
+  enter-bootloader   Enter Bootloader and re-establish communication.
+  boot-application   Request boot of a valid Application from Bootloader.
+  status             Show update state and next offset (Bootloader only).
+  ota                Upload, verify and commit an Application .bin, then boot.
+
+Options:
+  -Help, -h                  Show this help without opening a serial port.
+  -Port <name>               Serial port, e.g. COM14; required except for ports/help.
+  -BaudRate <number>         Default: 1000000 (8N1, no flow control).
+  -TimeoutMs <milliseconds>  Default: 2000; range: 1..60000.
+  -Text <text>               PING text, at most 32 UTF-8 bytes; default: LumaFlow.
+  -Image <path>              OTA only: raw Application .bin linked at 0x08002000.
+  -FirmwareVersion <uint32>  OTA only: metadata version; default: 0.
+  -NoBoot                   OTA only: remain in Bootloader after commit.
+  -Verbose                  Print protocol diagnostics.
+
+Examples: (run from firmware/; replace COM14 with your device port)
+  powershell -NoProfile -File scripts/lumaflow.ps1 -Command ports
+  powershell -NoProfile -File scripts/lumaflow.ps1 -Command info -Port COM14
+  powershell -NoProfile -File scripts/lumaflow.ps1 -Command ping -Port COM14 -Text hello
+  powershell -NoProfile -File scripts/lumaflow.ps1 -Command ota -Port COM14 -Image application.bin -FirmwareVersion 1
+
+OTA requires an installed Bootloader and erases the old Application.
+ELF, HEX and full Flash images are not accepted. Flash commands wait at least
+10000 ms and are not retried automatically. If an interrupted update remains
+receiving, reset the board before starting a new OTA. See scripts/README.md.
+You can use pwsh instead of powershell for PowerShell 7.
+'@
+            exit 0
+        }
         if ($Command -ne 'ota' -and ($NoBoot -or $PSBoundParameters.ContainsKey('Image') -or
             $PSBoundParameters.ContainsKey('FirmwareVersion'))) {
             throw '-Image, -FirmwareVersion and -NoBoot apply only to ota.'

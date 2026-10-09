@@ -5,6 +5,7 @@
 默认串口配置为固件 USART1 的 `1000000 8N1`、无流控；USB 串口适配器需要支持 1 Mbps。
 
 ```powershell
+pwsh -NoProfile -File scripts/lumaflow.ps1 -Help
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command ports
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command info -Port COM3
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command ping -Port COM3 -Text hello
@@ -14,6 +15,7 @@ pwsh -NoProfile -File scripts/lumaflow.ps1 -Command boot-application -Port COM3
 ```
 
 使用 Windows PowerShell 时将 `pwsh` 换成 `powershell`。
+`-Help`（或 `-h`）显示全部命令、参数和示例，无需指定串口，也不会打开串口或读取镜像。
 `-TimeoutMs` 默认 2000，范围为 1～60000；`-BaudRate` 默认 1000000，可用于匹配旧版或自定义固件。
 `ping` 以 UTF-8 编码 `-Text`，最多 32 字节，并核对回显。
 `info` 显示当前镜像类型、代码中的版本、最大 payload 和能力位；`status` 仅 Bootloader 支持。
@@ -58,10 +60,12 @@ failed 状态可直接重新执行 OTA。工具不跨进程断点续传。
 主机测试不需要硬件，也不会打开真实串口：
 
 ```powershell
+pwsh -NoProfile -File scripts/tests/cli_test.ps1
 pwsh -NoProfile -File scripts/tests/serial_test.ps1
 pwsh -NoProfile -File scripts/tests/ota_test.ps1
 ```
 
 OTA 测试包括协议测试、复位后丢失一次探测、完整/最大镜像、块大小协商、非对齐末块、
 不启动模式、输入校验、丢失 ACK、错误偏移、Flash/CRC 错误、错误响应和提交状态异常。
+CLI 测试验证 `-Help` / `-h` 的输出，以及帮助模式跳过串口和镜像操作。
 模拟测试不能证明 USB 串口驱动的 1 Mbps 支持、真实复位窗口或 Flash 擦写；这些需要开发板实测。
