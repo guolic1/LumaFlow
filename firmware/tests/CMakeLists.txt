@@ -22,14 +22,23 @@ target_include_directories(application_image_test PRIVATE
     ../bootloader
 )
 
+add_executable(led_matrix_scan_test
+    led_matrix_scan_test.c
+    ../application/led_matrix_scan.c
+)
+target_include_directories(led_matrix_scan_test PRIVATE ../application)
+
 if(MSVC)
     target_compile_options(command_protocol_test PRIVATE /W4 /WX)
     target_compile_options(application_image_test PRIVATE /W4 /WX)
+    target_compile_options(led_matrix_scan_test PRIVATE /W4 /WX)
 else()
     target_compile_options(command_protocol_test PRIVATE -Wall -Wextra -Werror)
     target_compile_options(application_image_test PRIVATE -Wall -Wextra -Werror)
+    target_compile_options(led_matrix_scan_test PRIVATE -Wall -Wextra -Werror)
 endif()
 
 enable_testing()
 add_test(NAME command_protocol_test COMMAND command_protocol_test)
 add_test(NAME application_image_test COMMAND application_image_test)
+add_test(NAME led_matrix_scan_test COMMAND led_matrix_scan_test)
