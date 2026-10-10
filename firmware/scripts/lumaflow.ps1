@@ -12,12 +12,13 @@ pwsh -File scripts/lumaflow.ps1 -Command ota -Port COM3 -Image application.bin -
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota')]
+    [ValidateSet('ports', 'info', 'ping', 'pwm', 'enter-bootloader', 'boot-application', 'status', 'ota')]
     [string]$Command = 'info',
     [string]$Port,
     [ValidateRange(1, 10000000)][int]$BaudRate = 1000000,
     [ValidateRange(1, 60000)][int]$TimeoutMs = 5000,
     [string]$Text = 'LumaFlow',
+    [ValidateRange(0, 1000)][int]$Duty,
     [string]$Image,
     [uint32]$FirmwareVersion = 0,
     [switch]$NoBoot,
@@ -146,8 +147,8 @@ function Invoke-SerialCommand(
     $wire = New-WireFrame $sequence $CommandId $Payload
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $nextSend = 0
-    # The firmware has no duplicate suppression for reset, boot or flash commands.
-    $retry = $CommandId -in @(1, 2, 0x23)
+    # Setting an absolute PWM duty is idempotent; reset/boot/flash are not.
+    $retry = $CommandId -in @(1, 2, 0x23, 0x30)
     while ($timer.ElapsedMilliseconds -lt $TimeoutMs) {
         if ($timer.ElapsedMilliseconds -ge $nextSend) {
             $Client.Port.WriteTimeout = [Math]::Max(1, $TimeoutMs - [int]$timer.ElapsedMilliseconds)
@@ -209,6 +210,17 @@ function Get-DeviceInfo($Client, [int]$TimeoutMs = 5000) {
         Version = '{0}.{1}.{2}' -f $data[2], $data[3], $data[4]
         MaxPayload = [BitConverter]::ToUInt16($data, 6)
         Capabilities = [BitConverter]::ToUInt32($data, 8)
+    }
+}
+
+function Set-DevicePwm($Client, [ValidateRange(0, 1000)][int]$Duty, [int]$TimeoutMs = 5000) {
+    $payload = [byte[]]@(($Duty -band 255), ($Duty -shr 8))
+    $data = Invoke-SerialCommand $Client 0x30 $payload $TimeoutMs
+    if ($data.Length -ne 2 -or [BitConverter]::ToUInt16($data, 0) -ne $Duty) {
+        throw 'Invalid SET_LED_PWM response.'
+    }
+    return [pscustomobject]@{
+        Duty = $Duty; DutyPercent = $Duty / 10.0; FrequencyHz = 1000
     }
 }
 
@@ -383,6 +395,7 @@ Commands (-Command defaults to info):
   ports              List available serial ports; no -Port required.
   info               Show device image, version and capabilities.
   ping               Send UTF-8 text and check the echo.
+  pwm                Set D1 PWM duty at 1 kHz (Application only).
   enter-bootloader   Enter Bootloader and re-establish communication.
   boot-application   Request boot of a valid Application from Bootloader.
   status             Show update state and next offset (Bootloader only).
@@ -394,6 +407,7 @@ Options:
   -BaudRate <number>         Default: 1000000 (8N1, no flow control).
   -TimeoutMs <milliseconds>  Default: 5000; range: 1..60000 per command/transition.
   -Text <text>               PING text, at most 32 UTF-8 bytes; default: LumaFlow.
+  -Duty <integer>            Required for pwm: 0..1000 = 0.0..100.0 percent.
   -Image <path>              OTA only: raw Application .bin linked at 0x08002000.
   -FirmwareVersion <uint32>  OTA only: metadata version; default: 0.
   -NoBoot                   OTA only: remain in Bootloader after commit.
@@ -401,7 +415,7 @@ Options:
 
 If the serial port is missing or busy, opening it is retried every 100 ms
 until it becomes available. Press Ctrl+C to cancel this wait.
-PING, GET_INFO and GET_UPDATE_STATUS are resent every 100 ms while silent,
+PING, GET_INFO, GET_UPDATE_STATUS and SET_LED_PWM are resent every 100 ms while silent,
 using one overall command deadline. Reset/boot commands probe the current image
 between attempts and wait for the target image to respond.
 
@@ -409,6 +423,7 @@ Examples: (run from firmware/; replace COM14 with your device port)
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ports
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command info -Port COM14
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ping -Port COM14 -Text hello
+  powershell -NoProfile -File scripts/lumaflow.ps1 -Command pwm -Port COM14 -Duty 500
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ota -Port COM14 -Image application.bin -FirmwareVersion 1
 
 OTA requires an installed Bootloader and erases the old Application.
@@ -422,6 +437,12 @@ You can use pwsh instead of powershell for PowerShell 7.
         if ($Command -ne 'ota' -and ($NoBoot -or $PSBoundParameters.ContainsKey('Image') -or
             $PSBoundParameters.ContainsKey('FirmwareVersion'))) {
             throw '-Image, -FirmwareVersion and -NoBoot apply only to ota.'
+        }
+        if ($Command -eq 'pwm' -and -not $PSBoundParameters.ContainsKey('Duty')) {
+            throw '-Duty is required for pwm (0..1000).'
+        }
+        if ($Command -ne 'pwm' -and $PSBoundParameters.ContainsKey('Duty')) {
+            throw '-Duty applies only to pwm.'
         }
         if ($Command -eq 'ports') {
             [IO.Ports.SerialPort]::GetPortNames() | Sort-Object
@@ -442,6 +463,7 @@ You can use pwsh instead of powershell for PowerShell 7.
         $serialPort.Write([byte[]]@(0), 0, 1)
         $client = New-SerialClient $serialPort
         switch ($Command) {
+            'pwm' { Set-DevicePwm $client $Duty $TimeoutMs }
             'info' { Get-DeviceInfo $client $TimeoutMs }
             'ping' {
                 $reply = Invoke-SerialCommand $client 1 $payload $TimeoutMs
