@@ -35,6 +35,28 @@ pwsh -NoProfile -File scripts/lumaflow.ps1 -Command boot-application -Port COM3
 
 ## OTA 升级
 
+专用烧录入口为 `ota.ps1`。默认先配置并编译 Application Release，再调用现有的
+`lumaflow.ps1 -Command ota` 烧录生成的 BIN，校验成功后启动 Application：
+
+```powershell
+powershell -NoProfile -File scripts/ota.ps1 -Port COM3
+# 使用 Debug 配置，或升级后停留在 Bootloader：
+powershell -NoProfile -File scripts/ota.ps1 -Port COM3 -Configuration Debug -NoBoot
+# 烧录已有 BIN，跳过配置和编译：
+powershell -NoProfile -File scripts/ota.ps1 -Port COM3 -Image build/Application/Release/LumaFlow.bin
+powershell -NoProfile -File scripts/ota.ps1 -Help
+```
+
+自动构建以脚本所在的 `firmware/` 为根目录，与启动脚本时的当前目录无关；
+输出为 `build/Application/<Release 或 Debug>/LumaFlow.bin`。
+`-Image` 的相对路径按调用者当前目录解析；指定后跳过构建，`-Configuration` 不参与镜像选择。
+CMake 优先使用 `.vscode/settings.json` 的 `cmake.cmakePath`，未设置时从 `PATH` 查找；
+Arm 工具链和 Ninja 的查找仍由现有 CMake 工具链配置负责。
+配置或编译失败会立即停止，不烧录旧 BIN；镜像验证和 OTA 错误通过非零退出码返回。
+支持 `-BaudRate`（默认 1000000）、`-TimeoutMs`（默认 5000）、`-FirmwareVersion`（默认 0）、
+`-NoBoot`、`-Verbose` 和 `-Help` / `-h`，串口等待与重试行为与通用工具一致。
+使用 PowerShell 7 时可将 `powershell` 换为 `pwsh`。
+
 工具实现固件已有的串口升级协议，只升级 Application，Bootloader 仍需用调试器安装。
 输入为链接到 `0x08002000` 的原始 `.bin`，不包含 Bootloader 或末尾元数据。
 不接受 `.elf`、Intel HEX 或完整 Flash 镜像。CMake 构建会自动生成供 OTA 使用的 BIN：
@@ -74,6 +96,7 @@ pwsh -NoProfile -File scripts/tests/cli_test.ps1
 pwsh -NoProfile -File scripts/tests/connection_test.ps1
 pwsh -NoProfile -File scripts/tests/serial_test.ps1
 pwsh -NoProfile -File scripts/tests/ota_test.ps1
+pwsh -NoProfile -File scripts/tests/ota_flash_test.ps1
 ```
 
 OTA 测试包括协议测试、复位后丢失一次探测、完整/最大镜像、块大小协商、非对齐末块、
@@ -81,4 +104,6 @@ OTA 测试包括协议测试、复位后丢失一次探测、完整/最大镜像
 错误响应和提交状态异常。协议测试验证静默重发、重试共用超时、设备错误立即失败以及擦写命令不重复发送。
 CLI 测试验证 `-Help` / `-h` 的输出，以及帮助模式跳过串口和镜像操作。
 连接测试模拟串口不存在、被占用后恢复，以及无效参数立即失败。
+专用烧录入口测试在临时目录模拟 CMake 和 OTA 命令，验证默认 Release、Debug、已有 BIN、
+带空格路径、参数传递、配置/编译失败停止、输出缺失及 OTA 错误码传递；不会打开真实串口。
 模拟测试不能证明 USB 串口驱动的 1 Mbps 支持、真实复位窗口或 Flash 擦写；这些需要开发板实测。

@@ -124,6 +124,8 @@ USART1 使用 `1000000 8N1`，Bootloader 和 Application 共用 CubeMX 生成的
 串口通信和 Application OTA 上位机工具位于 `scripts/lumaflow.ps1`，使用 PowerShell 和 .NET，
 无需第三方模块。支持查询串口、PING、设备信息、进入 Bootloader、查询升级状态、升级 `.bin` 和启动 Application。
 参数、镜像转换、使用示例及失败恢复步骤见 [scripts/README.md](scripts/README.md)。
+专用入口 `scripts/ota.ps1 -Port COM3` 默认构建 Application Release 并执行串口 OTA；
+也可用 `-Image <Application.bin>` 跳过构建，直接烧录已有镜像。
 
 协议核心的主机测试位于 `tests/`，可独立配置并运行：
 
