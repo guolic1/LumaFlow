@@ -119,6 +119,25 @@ function New-SerialClient($SerialPort) {
     }
 }
 
+function Open-DeviceSerialPort($SerialPort) {
+    $waiting = $false
+    while ($true) {
+        try { $SerialPort.Open(); return }
+        catch {
+            $cause = $_.Exception.GetBaseException()
+            if ($cause -isnot [IO.IOException] -and $cause -isnot [UnauthorizedAccessException]) {
+                throw
+            }
+            if (-not $waiting) {
+                Write-Host "Waiting for serial port $($SerialPort.PortName): $($cause.Message) (Ctrl+C to cancel)."
+                $waiting = $true
+            }
+            Write-Verbose "Serial port open failed: $($cause.Message)"
+            Start-Sleep -Milliseconds 100
+        }
+    }
+}
+
 function Invoke-SerialCommand(
     $Client, [byte]$CommandId, [byte[]]$Payload = @(), [int]$TimeoutMs = 2000
 ) {
@@ -347,6 +366,9 @@ Options:
   -NoBoot                   OTA only: remain in Bootloader after commit.
   -Verbose                  Print protocol diagnostics.
 
+If the serial port is missing or busy, opening it is retried every 100 ms
+until it becomes available. Press Ctrl+C to cancel this wait.
+
 Examples: (run from firmware/; replace COM14 with your device port)
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ports
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command info -Port COM14
@@ -379,7 +401,7 @@ You can use pwsh instead of powershell for PowerShell 7.
         $serialPort.RtsEnable = $false
         $serialPort.ReadTimeout = $TimeoutMs
         $serialPort.WriteTimeout = $TimeoutMs
-        $serialPort.Open()
+        Open-DeviceSerialPort $serialPort
         $serialPort.DiscardInBuffer()
         $serialPort.Write([byte[]]@(0), 0, 1)
         $client = New-SerialClient $serialPort

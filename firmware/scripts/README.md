@@ -25,6 +25,8 @@ pwsh -NoProfile -File scripts/lumaflow.ps1 -Command boot-application -Port COM3
 每条请求都检查 COBS、CRC16、响应标志、序号、命令及设备状态码。
 损坏、超长或无关帧被丢弃，可通过 `-Verbose` 查看诊断；操作失败返回非零退出码。
 串口在退出或异常时释放。请关闭占用同一串口的终端或其他工具。
+指定串口不存在或被占用时，工具会每隔 100 ms 重试打开，直到串口可用；等待没有时间上限，
+可用 Ctrl+C 取消。无效参数等非串口可用性错误会直接报错，可用 `-Verbose` 查看每次打开失败的原因。
 
 ## OTA 升级
 
@@ -61,6 +63,7 @@ failed 状态可直接重新执行 OTA。工具不跨进程断点续传。
 
 ```powershell
 pwsh -NoProfile -File scripts/tests/cli_test.ps1
+pwsh -NoProfile -File scripts/tests/connection_test.ps1
 pwsh -NoProfile -File scripts/tests/serial_test.ps1
 pwsh -NoProfile -File scripts/tests/ota_test.ps1
 ```
@@ -68,4 +71,5 @@ pwsh -NoProfile -File scripts/tests/ota_test.ps1
 OTA 测试包括协议测试、复位后丢失一次探测、完整/最大镜像、块大小协商、非对齐末块、
 不启动模式、输入校验、丢失 ACK、错误偏移、Flash/CRC 错误、错误响应和提交状态异常。
 CLI 测试验证 `-Help` / `-h` 的输出，以及帮助模式跳过串口和镜像操作。
+连接测试模拟串口不存在、被占用后恢复，以及无效参数立即失败。
 模拟测试不能证明 USB 串口驱动的 1 Mbps 支持、真实复位窗口或 Flash 擦写；这些需要开发板实测。
