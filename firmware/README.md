@@ -14,7 +14,6 @@ firmware/
 ├── application/
 │   ├── CMakeLists.txt             # 显式列出应用源码
 │   ├── commands.c/.h              # Application 命令表
-│   ├── led_pwm.c/.h               # D1 单灯硬件 PWM 测试
 │   ├── main.c                     # 应用入口 main()
 │   └── application.ld             # 手工维护的应用链接脚本
 ├── bootloader/
@@ -53,8 +52,6 @@ firmware/
 两份镜像的 RAM 均从 `0x20000000` 开始，容量为 8 KB，堆预留为 0，栈预留为 1 KB。Application 链接脚本只允许使用前 57312 字节，防止链接结果覆盖末尾元数据。元数据与镜像尾部共享最后一个 2 KB 擦除页，但不会占用额外页。CubeMX 重新生成的 `.ld` 不会覆盖手工脚本，内存布局及堆栈预留需在手工脚本中维护。
 
 Bootloader 启动时将 LED 矩阵的 IO0–IO9、IO12–IO17 配置为开漏输出、无内部上下拉，切换输出模式前先将输出锁存器置 1，避免初始化时主动拉低。IO10/IO11（PA13/PA14）在 Bootloader 中保留 SWD 模式、无内部上下拉，USART1 引脚保持串口用途。跳转时不清理矩阵 GPIO；Application 不调用 `MX_GPIO_Init()`，继承其余矩阵引脚配置，并将 PA13/PA14 切换为同样的开漏输出、无内部上下拉、输出锁存器为 1，此时 SWD 不再可用。独立启动 Application 不会补齐其余矩阵引脚的初始化；需通过配套 Bootloader 启动。移除 `MX_GPIO_Init()` 后，也不再执行其中的 SENSE_EN 和 IMU_INT/EXTI 初始化，ADC、I2C、USART1 各自的初始化保留。
-
-以上是矩阵基础初始化状态。Application 随后为 D1 PWM 测试单独配置 IO0/IO1，具体见下文。
 
 开漏输出的“初始高电平”是输出锁存器为 1、引脚释放为高阻，不会主动驱动 3.3 V，实际电平取决于外部电路。IO16（PF2）用作 GPIO 需要事先配置 OB 的 `NRST_MODE=2`，Bootloader 不自动写入 OB；PF2 板载 5.1 kΩ 上拉仍然存在。这些 GPIO 配置仅在对应固件执行后生效。
 
@@ -108,14 +105,8 @@ USART1 使用 `1000000 8N1`，Bootloader 和 Application 共用 CubeMX 生成的
 | `0x21` | `WRITE_CHUNK` | 是 | 否 | 按顺序写入一块镜像数据 |
 | `0x22` | `END_UPDATE` | 是 | 否 | 校验镜像并完成原子提交 |
 | `0x23` | `GET_UPDATE_STATUS` | 是 | 否 | 查询升级状态和下一个写入偏移 |
-| `0x30` | `SET_LED_PWM` | 否 | 是 | 设置 D1 占空比，固定 1 kHz |
 
 `GET_INFO` 的 12 字节 payload 依次为：协议版本、镜像类型、固件主/次/补丁版本、保留字节、最大 payload（2 字节）、能力位（4 字节）。镜像类型 `1` 表示 Bootloader，`2` 表示 Application。
-
-Application 版本为 `0.2.0`，能力位 bit 3 表示支持 `SET_LED_PWM`。请求 payload 必须恰好为
-2 字节小端 `duty:u16`，成功响应原样返回这 2 字节。范围 `0–1000` 对应 `0.0%–100.0%`；
-例如 `500` 的 payload 为 `F4 01`。长度错误返回 `BAD_LENGTH`（2），大于 1000 返回
-`BAD_ARGUMENT`（6），均不改变原占空比。设置绝对值可安全重复发送；Bootloader 不支持该命令。
 
 升级命令 payload 和响应如下：
 
@@ -131,7 +122,7 @@ Application 版本为 `0.2.0`，能力位 bit 3 表示支持 `SET_LED_PWM`。请
 响应状态码新增 `6`（参数错误）、`7`（Flash 操作错误）和 `8`（镜像校验错误）。Flash 操作错误或校验错误会将升级状态置为 failed，需要重新发送 `BEGIN_UPDATE` 从擦除开始；参数或顺序错误可根据 `GET_UPDATE_STATUS` 返回的 `next_offset` 修正后继续。
 
 串口通信和 Application OTA 上位机工具位于 `scripts/lumaflow.ps1`，使用 PowerShell 和 .NET，
-无需第三方模块。
+无需第三方模块。支持查询串口、PING、设备信息、进入 Bootloader、查询升级状态、升级 `.bin` 和启动 Application。
 参数、镜像转换、使用示例及失败恢复步骤见 [scripts/README.md](scripts/README.md)。
 
 协议核心的主机测试位于 `tests/`，可独立配置并运行：
@@ -141,22 +132,6 @@ cmake -S tests -B build/ProtocolTests -G Ninja
 cmake --build build/ProtocolTests
 ctest --test-dir build/ProtocolTests --output-on-failure
 ```
-
-## D1 单灯 PWM 测试
-
-D1 阴极为 IO0/PA2，作为开漏输出拉低；阳极为 IO1/PA3，使用推挽复用输出
-`TIM2_CH4 / AF2`。引脚复用依据 [STM32G031 数据手册 Table 13](https://www.st.com/resource/en/datasheet/stm32g031c8.pdf)。
-其余矩阵引脚保持基础初始化状态。TIM2 使用 App 的 64 MHz 定时器时钟，`PSC=63`、
-`ARR=999`，计数分辨率为 1 μs，PWM 频率为 1 kHz。`CCR4=duty`，0 始终低、1000 始终高；
-通过比较寄存器预装载，在下一个周期边界生效，延迟最多一个周期，不使用定时器中断或阻塞延时。
-
-上电、软件复位及 OTA 后占空比均从 0 开始，不保存到 Flash；脚本退出后保持最后设置值。
-`ENTER_BOOTLOADER` 执行复位前先停止 PWM 并释放 IO0/IO1。
-测试时需要确认 LED 和 GPIO 的限流条件；当前矩阵图未画出串联限流电阻，降低占空比不限制峰值电流。
-
-使用示波器测量 PA3 相对 GND，周期应为 1 ms，`duty=1/500/999` 的高电平时间分别为
-1 μs / 500 μs / 999 μs；0 和 1000 为恒定电平。实际频率精度受 HSI/系统时钟精度影响。
-实际波形、电流及矩阵其他 LED 是否存在微亮需要开发板实测。
 
 ## 选择配置和编译选项
 

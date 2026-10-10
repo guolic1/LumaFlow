@@ -22,29 +22,14 @@ target_include_directories(application_image_test PRIVATE
     ../bootloader
 )
 
-add_executable(application_commands_test
-    application_commands_test.c
-    ../application/commands.c
-    ../common/protocol/command_protocol.c
-    ../common/protocol/common_commands.c
-)
-target_include_directories(application_commands_test PRIVATE
-    ../application
-    ../common/platform
-    ../common/protocol
-)
-
 if(MSVC)
     target_compile_options(command_protocol_test PRIVATE /W4 /WX)
     target_compile_options(application_image_test PRIVATE /W4 /WX)
-    target_compile_options(application_commands_test PRIVATE /W4 /WX)
 else()
     target_compile_options(command_protocol_test PRIVATE -Wall -Wextra -Werror)
     target_compile_options(application_image_test PRIVATE -Wall -Wextra -Werror)
-    target_compile_options(application_commands_test PRIVATE -Wall -Wextra -Werror)
 endif()
 
 enable_testing()
 add_test(NAME command_protocol_test COMMAND command_protocol_test)
 add_test(NAME application_image_test COMMAND application_image_test)
-add_test(NAME application_commands_test COMMAND application_commands_test)
