@@ -1,5 +1,6 @@
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     commands.c
+    led_pwm.c
     main.c
 )
 

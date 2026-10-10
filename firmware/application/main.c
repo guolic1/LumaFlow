@@ -3,6 +3,7 @@
 #include "commands.h"
 #include "dma.h"
 #include "i2c.h"
+#include "led_pwm.h"
 #include "serial_uart.h"
 
 extern void SystemClock_Config(void);
@@ -39,6 +40,7 @@ int main(void)
     SystemClock_Config();
 
     application_matrix_swd_pins_init();
+    led_pwm_init();
     MX_DMA_Init();
     MX_ADC1_Init();
     MX_I2C1_Init();
@@ -51,6 +53,7 @@ int main(void)
 
         if (application_commands_take_bootloader_request())
         {
+            led_pwm_deinit();
             serial_uart_flush();
             NVIC_SystemReset();
         }
