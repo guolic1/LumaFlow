@@ -9,7 +9,6 @@ pwsh -NoProfile -File scripts/lumaflow.ps1 -Help
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command ports
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command info -Port COM3
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command ping -Port COM3 -Text hello
-pwsh -NoProfile -File scripts/lumaflow.ps1 -Command pwm -Port COM3 -Duty 500
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command enter-bootloader -Port COM3
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command status -Port COM3
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command boot-application -Port COM3
@@ -28,34 +27,11 @@ pwsh -NoProfile -File scripts/lumaflow.ps1 -Command boot-application -Port COM3
 串口在退出或异常时释放。请关闭占用同一串口的终端或其他工具。
 指定串口不存在或被占用时，工具会每隔 100 ms 重试打开，直到串口可用；等待没有时间上限，
 可用 Ctrl+C 取消。无效参数等非串口可用性错误会直接报错，可用 `-Verbose` 查看每次打开失败的原因。
-打开串口后，PING、设备信息、升级状态查询和 PWM 设置在没有有效响应时，每隔约 100 ms 重发同一请求；
+打开串口后，PING、设备信息和升级状态查询在没有有效响应时，每隔约 100 ms 重发同一请求；
 5 秒是每条命令所有重试共用的总超时，不会在每次重试时重新计时。收到设备错误码时立即报错；
 成功响应即使 payload 为空也算收到响应。损坏或无关帧不会终止重试。
 复位和启动命令采用设备信息探测：只在设备仍处于原镜像、且未收到切换确认时重发；
 收到确认后仅继续探测，避免重复复位。每次镜像切换（包括探测和重发）共用 `-TimeoutMs` 的总超时。
-
-## 单灯 PWM 亮度测试
-
-需要运行 Application `0.2.0` 或支持能力位 bit 3 的固件。`pwm` 设置 D1 的占空比，
-频率固定为 1 kHz；必须显式提供整数 `-Duty`，范围 `0–1000`，每单位代表 `0.1%`。
-
-```powershell
-pwsh -NoProfile -File scripts/lumaflow.ps1 -Command pwm -Port COM3 -Duty 1     # 0.1%
-pwsh -NoProfile -File scripts/lumaflow.ps1 -Command pwm -Port COM3 -Duty 100   # 10.0%
-pwsh -NoProfile -File scripts/lumaflow.ps1 -Command pwm -Port COM3 -Duty 500   # 50.0%
-pwsh -NoProfile -File scripts/lumaflow.ps1 -Command pwm -Port COM3 -Duty 1000  # 100.0%
-pwsh -NoProfile -File scripts/lumaflow.ps1 -Command pwm -Port COM3 -Duty 0     # 关闭
-```
-
-成功时返回 `Duty`、`DutyPercent`、`FrequencyHz`。设置在下一个 PWM 周期边界生效，
-脚本退出后保持最后设置值；复位后恢复 0，不写入 Flash。
-该命令沿用 COBS/CRC16 二进制协议，不是向串口发送 ASCII 文本 `500`；脚本负责编码和验证回显。
-设置绝对占空比可安全重发，沿用默认 5 秒总超时；设备错误码立即终止。
-Bootloader 或旧 Application 会返回 `BAD_COMMAND`，需先升级并启动新版 Application。
-`-Duty` 只适用于 `pwm`，缺少参数或超出范围时在打开串口前报错。
-
-D1 阳极为 PA3，阴极为 PA2。测试前确认 LED/GPIO 限流条件；低占空比不限制峰值电流。
-完整引脚、定时器配置和示波器验证方法见 [固件 README](../README.md#d1-单灯-pwm-测试)。
 
 ## OTA 升级
 
@@ -96,7 +72,6 @@ failed 状态可直接重新执行 OTA。工具不跨进程断点续传。
 ```powershell
 pwsh -NoProfile -File scripts/tests/cli_test.ps1
 pwsh -NoProfile -File scripts/tests/connection_test.ps1
-pwsh -NoProfile -File scripts/tests/pwm_test.ps1
 pwsh -NoProfile -File scripts/tests/serial_test.ps1
 pwsh -NoProfile -File scripts/tests/ota_test.ps1
 ```
@@ -106,5 +81,4 @@ OTA 测试包括协议测试、复位后丢失一次探测、完整/最大镜像
 错误响应和提交状态异常。协议测试验证静默重发、重试共用超时、设备错误立即失败以及擦写命令不重复发送。
 CLI 测试验证 `-Help` / `-h` 的输出，以及帮助模式跳过串口和镜像操作。
 连接测试模拟串口不存在、被占用后恢复，以及无效参数立即失败。
-PWM 测试验证 0/1000 端点、0.1% 分辨率、小端编码、参数校验、响应回显和静默重发。
 模拟测试不能证明 USB 串口驱动的 1 Mbps 支持、真实复位窗口或 Flash 擦写；这些需要开发板实测。

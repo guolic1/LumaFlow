@@ -13,7 +13,7 @@ function Assert-Help([string[]]$Arguments) {
     foreach ($expected in @('Usage:', '-Help', '-Command', '-Port', '-BaudRate', '1000000',
         '-TimeoutMs', '-Text', '-Image', '-FirmwareVersion', '-NoBoot', '-Verbose',
         'ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota',
-        'Examples:', '.bin', 'Default: 5000', '100 ms', 'Ctrl+C', 'pwm', '-Duty', '1000')) {
+        'Examples:', '.bin', 'Default: 5000', '100 ms', 'Ctrl+C')) {
         if (-not $text.Contains($expected)) { throw "Help is missing: $expected" }
     }
 }
