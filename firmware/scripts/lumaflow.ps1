@@ -16,7 +16,7 @@ param(
     [string]$Command = 'info',
     [string]$Port,
     [ValidateRange(1, 10000000)][int]$BaudRate = 1000000,
-    [ValidateRange(1, 60000)][int]$TimeoutMs = 2000,
+    [ValidateRange(1, 60000)][int]$TimeoutMs = 5000,
     [string]$Text = 'LumaFlow',
     [string]$Image,
     [uint32]$FirmwareVersion = 0,
@@ -139,18 +139,30 @@ function Open-DeviceSerialPort($SerialPort) {
 }
 
 function Invoke-SerialCommand(
-    $Client, [byte]$CommandId, [byte[]]$Payload = @(), [int]$TimeoutMs = 2000
+    $Client, [byte]$CommandId, [byte[]]$Payload = @(), [int]$TimeoutMs = 5000
 ) {
     $sequence = $Client.Sequence
     $Client.Sequence = ($sequence + 1) % 256
     $wire = New-WireFrame $sequence $CommandId $Payload
-    $Client.Port.Write($wire, 0, $wire.Length)
     $timer = [Diagnostics.Stopwatch]::StartNew()
+    $nextSend = 0
+    # The firmware has no duplicate suppression for reset, boot or flash commands.
+    $retry = $CommandId -in @(1, 2, 0x23)
     while ($timer.ElapsedMilliseconds -lt $TimeoutMs) {
-        $Client.Port.ReadTimeout = [Math]::Max(1, $TimeoutMs - [int]$timer.ElapsedMilliseconds)
+        if ($timer.ElapsedMilliseconds -ge $nextSend) {
+            $Client.Port.WriteTimeout = [Math]::Max(1, $TimeoutMs - [int]$timer.ElapsedMilliseconds)
+            # A reset can cut a request in half; delimit it before the next attempt.
+            $Client.Port.Write([byte[]]@(0), 0, 1)
+            $Client.Port.Write($wire, 0, $wire.Length)
+            $nextSend = $TimeoutMs
+            if ($retry) { $nextSend = $timer.ElapsedMilliseconds + 100 }
+        }
+        $remaining = $TimeoutMs - [int]$timer.ElapsedMilliseconds
+        if ($remaining -le 0) { break }
+        $Client.Port.ReadTimeout = [Math]::Max(1, [Math]::Min($remaining, $nextSend - $timer.ElapsedMilliseconds))
         try { $value = $Client.Port.ReadByte() }
         catch {
-            if ($_.Exception.GetBaseException() -is [TimeoutException]) { break }
+            if ($_.Exception.GetBaseException() -is [TimeoutException]) { continue }
             throw
         }
         if ($value -lt 0) { throw [IO.IOException]::new('Serial port closed while reading.') }
@@ -177,14 +189,16 @@ function Invoke-SerialCommand(
                 'INTERNAL_ERROR', 'BAD_ARGUMENT', 'FLASH_ERROR', 'VERIFY_ERROR')
             $name = 'UNKNOWN'
             if ($frame.Status -lt $names.Length) { $name = $names[$frame.Status] }
-            throw ('Command 0x{0:X2}: {1} (status {2}).' -f $CommandId, $name, $frame.Status)
+            $failure = [InvalidOperationException]::new(('Command 0x{0:X2}: {1} (status {2}).' -f $CommandId, $name, $frame.Status))
+            $failure.Data['CommandStatus'] = [int]$frame.Status
+            throw $failure
         }
         return ,$frame.Payload
     }
     throw [TimeoutException]::new(('Command 0x{0:X2} timed out after {1} ms; device outcome is unknown.' -f $CommandId, $TimeoutMs))
 }
 
-function Get-DeviceInfo($Client, [int]$TimeoutMs = 2000) {
+function Get-DeviceInfo($Client, [int]$TimeoutMs = 5000) {
     $data = Invoke-SerialCommand $Client 2 -TimeoutMs $TimeoutMs
     if ($data.Length -ne 12 -or $data[0] -ne 1 -or $data[1] -notin @(1, 2)) {
         throw 'Invalid GET_INFO response.'
@@ -198,25 +212,47 @@ function Get-DeviceInfo($Client, [int]$TimeoutMs = 2000) {
     }
 }
 
-function Enter-DeviceBootloader($Client, [int]$TimeoutMs = 2000) {
-    $info = Get-DeviceInfo $Client $TimeoutMs
-    if ($info.ImageType -eq 1) { return $info }
-    if (($info.Capabilities -band 1) -eq 0) { throw 'Device cannot enter Bootloader.' }
-    $reply = Invoke-SerialCommand $Client 0x10 -TimeoutMs $TimeoutMs
-    if ($reply.Length -ne 0) { throw 'Invalid ENTER_BOOTLOADER response.' }
-    # Start immediately, retry only GET_INFO, and delimit any request cut by reset.
-    # Short attempts catch the bootloader command window without waiting for reset.
+function Set-DeviceImage($Client, [int]$ImageType, [int]$TimeoutMs = 5000) {
+    $commandId = 0x10
+    $capability = 1
+    $targetName = 'Bootloader'
+    if ($ImageType -eq 2) { $commandId = 0x11; $capability = 2; $targetName = 'Application' }
+    $acknowledged = $false
     $timer = [Diagnostics.Stopwatch]::StartNew()
     while ($timer.ElapsedMilliseconds -lt $TimeoutMs) {
-        $Client.Port.Write([byte[]]@(0), 0, 1)
-        try { $info = Get-DeviceInfo $Client 50 }
+        $remaining = $TimeoutMs - [int]$timer.ElapsedMilliseconds
+        try { $info = Get-DeviceInfo $Client ([Math]::Min(100, $remaining)) }
         catch [TimeoutException] { continue }
-        if ($info.ImageType -eq 1) { return $info }
+        if ($info.ImageType -eq $ImageType) { return $info }
+        if (($info.Capabilities -band $capability) -eq 0) { throw "Device cannot switch to $targetName." }
+        $remaining = $TimeoutMs - [int]$timer.ElapsedMilliseconds
+        if ($remaining -le 0) { break }
+        if (-not $acknowledged) {
+            # Probe the image between attempts: a lost ACK must not cause repeated
+            # resets, and a successful reset may take time before GET_INFO works.
+            try {
+                $reply = Invoke-SerialCommand $Client $commandId -TimeoutMs ([Math]::Min(100, $remaining))
+                if ($reply.Length -ne 0) { throw 'Invalid image transition response.' }
+                $acknowledged = $true
+            } catch [TimeoutException] { continue }
+            catch [InvalidOperationException] {
+                # The image may have changed after GET_INFO and no longer supports
+                # the transition command. Confirm that with the next probe.
+                if ($_.Exception.Data['CommandStatus'] -ne 1) { throw }
+                continue
+            }
+        } else {
+            Start-Sleep -Milliseconds ([Math]::Min(50, $remaining))
+        }
     }
-    throw [TimeoutException]::new('Bootloader handshake timed out; reset the board and retry.')
+    throw [TimeoutException]::new("$targetName handshake timed out after $TimeoutMs ms; reset the board and retry.")
 }
 
-function Get-DeviceUpdateStatus($Client, [int]$TimeoutMs = 2000) {
+function Enter-DeviceBootloader($Client, [int]$TimeoutMs = 5000) {
+    return Set-DeviceImage $Client 1 $TimeoutMs
+}
+
+function Get-DeviceUpdateStatus($Client, [int]$TimeoutMs = 5000) {
     $data = Invoke-SerialCommand $Client 0x23 -TimeoutMs $TimeoutMs
     if ($data.Length -ne 12 -or $data[0] -gt 3 -or $data[1] -gt 4) {
         throw 'Invalid GET_UPDATE_STATUS response.'
@@ -278,7 +314,7 @@ function Read-ApplicationImage([string]$Path) {
 
 function Invoke-ApplicationUpdate(
     $Client, [byte[]]$Data, [uint32]$FirmwareVersion,
-    [int]$TimeoutMs = 2000, [switch]$NoBoot
+    [int]$TimeoutMs = 5000, [switch]$NoBoot
 ) {
     Assert-ApplicationImage $Data
     $crc = Get-Crc32 $Data
@@ -292,9 +328,7 @@ function Invoke-ApplicationUpdate(
     }
     Write-Host ('Updating {0} bytes, CRC32 0x{1:X8}, firmware version {2}.' -f $Data.Length, $crc, $FirmwareVersion)
     $begin = [BitConverter]::GetBytes([uint32]$Data.Length) + [BitConverter]::GetBytes($crc) + [BitConverter]::GetBytes($FirmwareVersion)
-    # Erasing 28 flash pages and verifying the full image need a longer deadline.
-    $flashTimeout = [Math]::Max(10000, $TimeoutMs)
-    $reply = Invoke-SerialCommand $Client 0x20 $begin $flashTimeout
+    $reply = Invoke-SerialCommand $Client 0x20 $begin $TimeoutMs
     if ($reply.Length -ne 8 -or [BitConverter]::ToUInt32($reply, 4) -ne 0) {
         throw 'Invalid BEGIN_UPDATE response/initial offset.'
     }
@@ -316,7 +350,7 @@ function Invoke-ApplicationUpdate(
             $offset += $count
             Write-Progress -Activity 'LumaFlow OTA' -Status "$offset / $($Data.Length) bytes" -PercentComplete (100 * $offset / $Data.Length)
         }
-        $reply = Invoke-SerialCommand $Client 0x22 -TimeoutMs $flashTimeout
+        $reply = Invoke-SerialCommand $Client 0x22 -TimeoutMs $TimeoutMs
         if ($reply.Length -ne 0) { throw 'Invalid END_UPDATE response.' }
         $status = Get-DeviceUpdateStatus $Client $TimeoutMs
         if ($status.State -ne 'complete' -or $status.LastResult -ne 'OK' -or
@@ -325,9 +359,8 @@ function Invoke-ApplicationUpdate(
         }
         Write-Host 'Application image verified and committed.'
         if (-not $NoBoot) {
-            $reply = Invoke-SerialCommand $Client 0x11 -TimeoutMs $TimeoutMs
-            if ($reply.Length -ne 0) { throw 'Invalid BOOT_APPLICATION response.' }
-            Write-Host 'Application boot requested.'
+            $null = Set-DeviceImage $Client 2 $TimeoutMs
+            Write-Host 'Application is running.'
         }
     } finally { Write-Progress -Activity 'LumaFlow OTA' -Completed }
 }
@@ -359,7 +392,7 @@ Options:
   -Help, -h                  Show this help without opening a serial port.
   -Port <name>               Serial port, e.g. COM14; required except for ports/help.
   -BaudRate <number>         Default: 1000000 (8N1, no flow control).
-  -TimeoutMs <milliseconds>  Default: 2000; range: 1..60000.
+  -TimeoutMs <milliseconds>  Default: 5000; range: 1..60000 per command/transition.
   -Text <text>               PING text, at most 32 UTF-8 bytes; default: LumaFlow.
   -Image <path>              OTA only: raw Application .bin linked at 0x08002000.
   -FirmwareVersion <uint32>  OTA only: metadata version; default: 0.
@@ -368,6 +401,9 @@ Options:
 
 If the serial port is missing or busy, opening it is retried every 100 ms
 until it becomes available. Press Ctrl+C to cancel this wait.
+PING, GET_INFO and GET_UPDATE_STATUS are resent every 100 ms while silent,
+using one overall command deadline. Reset/boot commands probe the current image
+between attempts and wait for the target image to respond.
 
 Examples: (run from firmware/; replace COM14 with your device port)
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ports
@@ -376,8 +412,8 @@ Examples: (run from firmware/; replace COM14 with your device port)
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ota -Port COM14 -Image application.bin -FirmwareVersion 1
 
 OTA requires an installed Bootloader and erases the old Application.
-ELF, HEX and full Flash images are not accepted. Flash commands wait at least
-10000 ms and are not retried automatically. If an interrupted update remains
+ELF, HEX and full Flash images are not accepted. Flash commands use -TimeoutMs
+and are not replayed automatically. If an interrupted update remains
 receiving, reset the board before starting a new OTA. See scripts/README.md.
 You can use pwsh instead of powershell for PowerShell 7.
 '@
@@ -414,9 +450,8 @@ You can use pwsh instead of powershell for PowerShell 7.
             }
             'enter-bootloader' { Enter-DeviceBootloader $client $TimeoutMs }
             'boot-application' {
-                $reply = Invoke-SerialCommand $client 0x11 -TimeoutMs $TimeoutMs
-                if ($reply.Length -ne 0) { throw 'Invalid BOOT_APPLICATION response.' }
-                Write-Output 'Application boot requested.'
+                $null = Set-DeviceImage $client 2 $TimeoutMs
+                Write-Output 'Application is running.'
             }
             'status' { Get-DeviceUpdateStatus $client $TimeoutMs }
             'ota' { Invoke-ApplicationUpdate $client $imageData $FirmwareVersion $TimeoutMs -NoBoot:$NoBoot }

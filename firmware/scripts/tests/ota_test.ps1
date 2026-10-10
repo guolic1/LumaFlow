@@ -14,10 +14,18 @@ function New-UpdatePort([string]$Fault = '') {
         switch ($r.Command) {
             2 {
                 if ($p.Mode -eq 2) { Add-Response $p $r @(1, 2, 0, 1, 0, 0, 128, 0, 1, 0, 0, 0) }
+                elseif ($p.Fault -eq 'delayed-reset' -and $p.Probes -lt 3) { $p.Probes++; return }
                 elseif ($p.Probes -eq 0) { $p.Probes++; return }
                 else { Add-Response $p $r @(1, 1, 0, 2, 0, 0, 128, 0, 6, 0, 0, 0) }
             }
-            0x10 { $p.Mode = 1; Add-Response $p $r }
+            0x10 {
+                $p.ResetRequests++
+                if ($p.Fault -eq 'lost-reset-request' -and $p.ResetRequests -eq 1) { return }
+                if ($p.Fault -ne 'stuck-reset') { $p.Mode = 1 }
+                if ($p.Fault -eq 'reset-race') { Add-Response $p $r @() 1; return }
+                if ($p.Fault -eq 'lost-reset-ack') { return }
+                Add-Response $p $r
+            }
             0x23 {
                 $state = 0
                 if ($p.Fault -eq 'receiving') { $state = 1 }
@@ -57,7 +65,16 @@ function New-UpdatePort([string]$Fault = '') {
                 $p.Completed = $true
                 Add-Response $p $r
             }
-            0x11 { Assert-True $p.Completed 'Boot only after commit'; $p.Booted = $true; Add-Response $p $r }
+            0x11 {
+                Assert-True $p.Completed 'Boot only after commit'
+                $p.BootRequests++
+                if ($p.Fault -eq 'boot-rejected') { Add-Response $p $r @() 3; return }
+                if ($p.Fault -eq 'lost-boot-request' -and $p.BootRequests -eq 1) { return }
+                $p.Booted = $true
+                $p.Mode = 2
+                if ($p.Fault -eq 'lost-boot-ack') { return }
+                Add-Response $p $r
+            }
             default { throw 'Unexpected command' }
         }
     }
@@ -70,6 +87,8 @@ function New-UpdatePort([string]$Fault = '') {
     $device | Add-Member NoteProperty Received ([Collections.Generic.List[byte]]::new())
     $device | Add-Member NoteProperty Completed $false
     $device | Add-Member NoteProperty Booted $false
+    $device | Add-Member NoteProperty ResetRequests 0
+    $device | Add-Member NoteProperty BootRequests 0
     return $device
 }
 
@@ -83,6 +102,30 @@ $device.Mode = 1
 $device.Probes = 1
 Invoke-ApplicationUpdate (New-SerialClient $device) $imageData 0 -NoBoot
 Assert-True ($device.Completed -and -not $device.Booted) 'NoBoot leaves committed image in Bootloader'
+
+foreach ($fault in @('lost-reset-request', 'lost-reset-ack', 'delayed-reset', 'reset-race', 'lost-boot-request', 'lost-boot-ack')) {
+    $device = New-UpdatePort $fault
+    Invoke-ApplicationUpdate (New-SerialClient $device) $imageData 1 -TimeoutMs 1500
+    Assert-True ($device.Completed -and $device.Booted) "Recover from $fault"
+    $expectedResets = 1
+    if ($fault -eq 'lost-reset-request') { $expectedResets = 2 }
+    Assert-True ($device.ResetRequests -eq $expectedResets) 'Only repeat reset if the device is still in Application'
+    $expectedBoots = 1
+    if ($fault -eq 'lost-boot-request') { $expectedBoots = 2 }
+    Assert-True ($device.BootRequests -eq $expectedBoots) 'Only repeat boot if the device is still in Bootloader'
+}
+$device = New-UpdatePort 'stuck-reset'
+$timer = [Diagnostics.Stopwatch]::StartNew()
+Assert-Throws { Enter-DeviceBootloader (New-SerialClient $device) 300 } 'handshake timed out'
+Assert-True ($device.ResetRequests -eq 1) 'Acknowledged reset must not be repeated while waiting'
+Assert-True ($timer.ElapsedMilliseconds -ge 300 -and $timer.ElapsedMilliseconds -lt 1000) 'Reset transition has one overall deadline'
+
+$device = New-UpdatePort 'boot-rejected'
+Assert-Throws { Invoke-ApplicationUpdate (New-SerialClient $device) $imageData 0 -TimeoutMs 1500 } 'BAD_STATE'
+Assert-True ($device.BootRequests -eq 1 -and -not $device.Booted) 'A rejected boot must fail without retry'
+$device = New-UpdatePort
+$info = Set-DeviceImage (New-SerialClient $device) 2 1000
+Assert-True ($info.ImageType -eq 2 -and $device.BootRequests -eq 0) 'Already in Application needs no boot command'
 
 foreach ($fault in @('lost-ack', 'wrong-offset', 'flash', 'verify', 'receiving', 'chunk-limit', 'bad-begin', 'bad-end', 'uncommitted')) {
     $device = New-UpdatePort $fault

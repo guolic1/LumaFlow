@@ -21,6 +21,7 @@ function Assert-Throws([scriptblock]$Action, [string]$Pattern) {
 function New-FakePort([scriptblock]$Handler) {
     $fake = [pscustomobject]@{
         ReadTimeout = 1000
+        WriteTimeout = 1000
         Incoming = [Collections.Generic.Queue[byte]]::new()
         Requests = [Collections.Generic.List[object]]::new()
         Handler = $Handler
@@ -35,7 +36,10 @@ function New-FakePort([scriptblock]$Handler) {
         & $this.Handler $this $frame
     }
     $fake | Add-Member ScriptMethod ReadByte {
-        if ($this.Incoming.Count -eq 0) { throw [TimeoutException]::new('fake timeout') }
+        if ($this.Incoming.Count -eq 0) {
+            Start-Sleep -Milliseconds $this.ReadTimeout
+            throw [TimeoutException]::new('fake timeout')
+        }
         return [int]$this.Incoming.Dequeue()
     }
     return $fake
@@ -70,6 +74,38 @@ $fakePort = New-FakePort { param($p, $r) Add-Response $p $r @() 7 }
 Assert-Throws { Invoke-SerialCommand (New-SerialClient $fakePort) 1 } 'FLASH_ERROR'
 $fakePort = New-FakePort { param($p, $r) }
 Assert-Throws { Invoke-SerialCommand (New-SerialClient $fakePort) 1 -TimeoutMs 20 } 'timeout|timed out'
-Assert-True ($fakePort.Requests.Count -eq 1) 'No implicit command retry'
+Assert-True ($fakePort.Requests.Count -eq 1) 'No retry past a short command deadline'
 Assert-Throws { New-WireFrame 0 1 ([byte[]]::new(129)) } '128'
 Write-Host 'Serial protocol tests passed.'
+
+$fakePort = New-FakePort {
+    param($p, $r)
+    if ($p.Requests.Count -eq 3) { Add-Response $p $r @(0, 17, 0, 255) }
+}
+Assert-Bytes (Invoke-SerialCommand (New-SerialClient $fakePort) 1 @(0, 17, 0, 255) 1000) @(0, 17, 0, 255) 'Retry PING until the device responds'
+Assert-True ($fakePort.Requests.Count -eq 3) 'Retry after two dropped requests'
+Assert-True ($fakePort.Requests[0].Sequence -eq $fakePort.Requests[2].Sequence) 'Retry keeps the request sequence'
+Assert-Bytes $fakePort.Requests[2].Payload $fakePort.Requests[0].Payload 'Retry keeps the payload'
+
+$fakePort = New-FakePort { param($p, $r) }
+$timer = [Diagnostics.Stopwatch]::StartNew()
+Assert-Throws { Invoke-SerialCommand (New-SerialClient $fakePort) 2 -TimeoutMs 250 } 'timed out'
+Assert-True ($fakePort.Requests.Count -ge 2) 'Repeat GET_INFO while the device is silent'
+Assert-True ($timer.ElapsedMilliseconds -ge 250 -and $timer.ElapsedMilliseconds -lt 1000) 'One overall deadline across retries'
+
+foreach ($commandId in @(0x10, 0x11, 0x20, 0x21, 0x22)) {
+    $fakePort = New-FakePort { param($p, $r) }
+    Assert-Throws { Invoke-SerialCommand (New-SerialClient $fakePort) $commandId -TimeoutMs 120 } 'timed out'
+    Assert-True ($fakePort.Requests.Count -eq 1) 'Do not blindly replay a command with side effects'
+}
+$fakePort = New-FakePort { param($p, $r) Add-Response $p $r @() 6 }
+Assert-Throws { Invoke-SerialCommand (New-SerialClient $fakePort) 1 } 'BAD_ARGUMENT'
+Assert-True ($fakePort.Requests.Count -eq 1) 'A device error is a response, not a reason to retry'
+
+$fakePort = New-FakePort {
+    param($p, $r)
+    if ($p.Requests.Count -eq 2) { Add-Response $p $r @(2, 0, 0, 0, 8, 0, 0, 0, 8, 0, 0, 0) }
+}
+$updateStatus = Get-DeviceUpdateStatus (New-SerialClient $fakePort) 1000
+Assert-True ($updateStatus.State -eq 'complete' -and $fakePort.Requests.Count -eq 2) 'Status queries retry while silent'
+Write-Host 'Serial retry tests passed.'
