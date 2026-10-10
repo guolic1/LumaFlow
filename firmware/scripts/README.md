@@ -61,10 +61,11 @@ D1 阳极为 PA3，阴极为 PA2。测试前确认 LED/GPIO 限流条件；低�
 
 工具实现固件已有的串口升级协议，只升级 Application，Bootloader 仍需用调试器安装。
 输入为链接到 `0x08002000` 的原始 `.bin`，不包含 Bootloader 或末尾元数据。
-不接受 `.elf`、Intel HEX 或完整 Flash 镜像。若构建结果只有 ELF，可用已有 Arm GNU Toolchain 转换：
+不接受 `.elf`、Intel HEX 或完整 Flash 镜像。CMake 构建会自动生成供 OTA 使用的 BIN：
 
 ```powershell
-arm-none-eabi-objcopy -O binary build/Application/Release/LumaFlow.elf build/Application/Release/LumaFlow.bin
+cmake --preset Application
+cmake --build --preset Application-Release --parallel
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command ota -Port COM3 -Image build/Application/Release/LumaFlow.bin -FirmwareVersion 1
 # 升级后保持在 Bootloader，稍后手动 boot-application：
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command ota -Port COM3 -Image build/Application/Release/LumaFlow.bin -FirmwareVersion 1 -NoBoot

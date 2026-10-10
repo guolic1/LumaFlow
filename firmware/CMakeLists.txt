@@ -83,3 +83,20 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
 )
+
+# Keep conversion outputs beside the ELF for both single- and multi-config builds.
+set(LUMAFLOW_IMAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+if(CMAKE_CONFIGURATION_TYPES)
+    string(APPEND LUMAFLOW_IMAGE_DIR "/$<CONFIG>")
+endif()
+set(LUMAFLOW_HEX "${LUMAFLOW_IMAGE_DIR}/${CMAKE_PROJECT_NAME}.hex")
+set(LUMAFLOW_BIN "${LUMAFLOW_IMAGE_DIR}/${CMAKE_PROJECT_NAME}.bin")
+add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+    COMMAND "${CMAKE_OBJCOPY}" -O ihex
+        "$<TARGET_FILE:${CMAKE_PROJECT_NAME}>" "${LUMAFLOW_HEX}"
+    COMMAND "${CMAKE_OBJCOPY}" -I ihex -O binary
+        "${LUMAFLOW_HEX}" "${LUMAFLOW_BIN}"
+    BYPRODUCTS "${LUMAFLOW_HEX}" "${LUMAFLOW_BIN}"
+    COMMENT "Generating ${CMAKE_PROJECT_NAME}.hex and ${CMAKE_PROJECT_NAME}.bin"
+    VERBATIM
+)

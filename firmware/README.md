@@ -171,7 +171,9 @@ D1 阴极为 IO0/PA2，作为开漏输出拉低；阳极为 IO1/PA3，使用推�
 
 状态栏显示这两个选择入口，点击即可切换；随后三个按钮均使用当前选择。CMake Tools 会按当前配置过滤编译选项，显示 `Debug`、`Release`，以及扩展内置的 `[Default]`；请明确选择前两项之一。该行为见 [CMake Tools 官方说明](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/cmake-presets.md#cmake-select-build-preset)。
 
-Build Preset 在 JSON 内使用 `Application-Debug` 等唯一名称，界面显示名为 `Debug` 或 `Release`。输出 ELF 和 map 分别位于 `build/<配置>/<编译选项>/`，例如 `build/Bootloader/Debug/LumaFlow.elf`，四种组合互不覆盖。
+Build Preset 在 JSON 内使用 `Application-Debug` 等唯一名称，界面显示名为 `Debug` 或 `Release`。输出 ELF、map、HEX 和 BIN 位于 `build/<配置>/<编译选项>/`，例如 `build/Bootloader/Debug/LumaFlow.bin`，四种组合互不覆盖。
+
+链接完成后，CMake 使用工具链的 `objcopy` 先将 ELF 转为 Intel HEX，再将 HEX 转为原始 BIN。HEX 保留烧录地址，BIN 不包含地址信息；Bootloader 和 Application 的起始地址分别为 `0x08000000` 和 `0x08002000`。Application BIN 只包含应用镜像，不包含 Bootloader 或升级元数据，可直接供串口 OTA 脚本使用。
 
 在 `firmware` 目录执行（`cmake` 需在 `PATH` 中，或使用本地配置里的完整路径）：
 
