@@ -1,5 +1,7 @@
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     commands.c
+    led_matrix.c
+    led_matrix_scan.c
     main.c
 )
 
