@@ -27,6 +27,8 @@ _Static_assert(FLUID_ACCEL_DIVISOR > 0 && FLUID_FLIP_Q8 >= 0 && FLUID_FLIP_Q8 <=
                "Force and pressure coefficients are out of range");
 _Static_assert(FLUID_VELOCITY_RETAIN_Q8 >= 0 && FLUID_VELOCITY_RETAIN_Q8 <= 256,
                "Velocity retention must be in 0..256");
+_Static_assert(FLUID_WALL_RESTITUTION_Q8 >= 0 && FLUID_WALL_RESTITUTION_Q8 <= 256,
+               "Wall restitution must be in 0..256");
 _Static_assert(FLUID_INITIAL_X_PITCH > 0 && FLUID_INITIAL_ROW_PITCH > 0 &&
                    FLUID_INITIAL_WALL_INSET >= 0 && FLUID_INITIAL_WALL_INSET < FLUID_WALL,
                "Initial particle spacing and inset must be valid");
@@ -94,6 +96,17 @@ bool fluid_sim_contains(int16_t x, int16_t y)
     return true;
 }
 
+static void wall_impulse(fluid_particle_t *p, int32_t nx, int32_t ny)
+{
+    int32_t outward = (p->vx * nx + p->vy * ny) / FLUID_UNIT;
+    if (outward > 0)
+    {
+        int32_t impulse = outward + outward * FLUID_WALL_RESTITUTION_Q8 / 256;
+        p->vx = speed(p->vx - impulse * nx / FLUID_UNIT);
+        p->vy = speed(p->vy - impulse * ny / FLUID_UNIT);
+    }
+}
+
 static void collide_at(fluid_particle_t *p, int32_t x, int32_t y)
 {
     /* Axis speed clamps can reintroduce a small outward component on sloped walls.
@@ -117,8 +130,7 @@ static void collide_at(fluid_particle_t *p, int32_t x, int32_t y)
             int32_t outward = (p->vx * nx + p->vy * ny) / FLUID_UNIT;
             if ((excess >= -2) && (outward > 0))
             {
-                p->vx = speed(p->vx - outward * nx / FLUID_UNIT);
-                p->vy = speed(p->vy - outward * ny / FLUID_UNIT);
+                wall_impulse(p, nx, ny);
                 corrected |= outward > 2;
             }
         }
@@ -173,9 +185,7 @@ static void move(fluid_particle_t *p)
     {
         /* The quantized hit may lie just inside the wall; still apply its impulse. */
         int32_t nx = normals[wall][0], ny = normals[wall][1];
-        int32_t outward = (p->vx * nx + p->vy * ny) / FLUID_UNIT;
-        p->vx = speed(p->vx - outward * nx / FLUID_UNIT);
-        p->vy = speed(p->vy - outward * ny / FLUID_UNIT);
+        wall_impulse(p, nx, ny);
     }
     collide_at(p, p->x + dx * fraction / 32768, p->y + dy * fraction / 32768);
 }

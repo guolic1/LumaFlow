@@ -30,6 +30,10 @@
 #ifndef FLUID_VELOCITY_RETAIN_Q8
 #define FLUID_VELOCITY_RETAIN_Q8 252
 #endif
+/* Outward normal speed returned inward: 0 = no bounce, 256 = elastic. */
+#ifndef FLUID_WALL_RESTITUTION_Q8
+#define FLUID_WALL_RESTITUTION_Q8 32
+#endif
 
 /* Larger FLIP share preserves more inertia. Density correction divisor works inversely. */
 #ifndef FLUID_FLIP_Q8

@@ -8,6 +8,39 @@
 
 static fluid_sim_t sim;
 
+static void test_wall_rebound(void)
+{
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER + FLUID_WALL - 100, 100, 400};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].vx == 98 && sim.particles[0].vy == -49);
+    assert(fluid_sim_contains(sim.particles[0].x, sim.particles[0].y));
+    /* Moving away from a wall must not trigger another bounce. */
+    sim.phase = FLUID_PHASE_IDLE;
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER + FLUID_WALL - 1, 0, -400};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].vy == -393);
+    /* The swept high-speed path uses the same restitution as ordinary motion. */
+    sim.phase = FLUID_PHASE_IDLE;
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 0, 16384};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].vy == -2016);
+    assert(fluid_sim_contains(sim.particles[0].x, sim.particles[0].y));
+    /* Sloped walls reflect the normal component while retaining tangential motion. */
+    sim.phase = FLUID_PHASE_IDLE;
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER + 3500, FLUID_CENTER + 2000, 400, 200};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    const fluid_particle_t *p = &sim.particles[0];
+    assert(p->vx * 887 + p->vy * 512 < 0);
+    assert(abs((-512 * p->vx + 887 * p->vy) - (-512 * 393 + 887 * 196)) <= 2048);
+    assert(p->vx * p->vx + p->vy * p->vy <= 393 * 393 + 196 * 196);
+    assert(fluid_sim_contains(p->x, p->y));
+}
+
 static void test_velocity_damping(void)
 {
     fluid_sim_init(&sim);
@@ -335,6 +368,7 @@ static void test_droplet_outline(void)
 
 int main(void)
 {
+    test_wall_rebound();
     test_velocity_damping();
     test_numeric_tables();
     test_high_speed_motion();
