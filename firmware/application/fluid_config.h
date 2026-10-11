@@ -44,7 +44,9 @@
 #endif
 #define FLUID_PARTICLE_DISTANCE 680
 #define FLUID_REST_DENSITY 512U
+#ifndef FLUID_SEPARATION_PASSES
 #define FLUID_SEPARATION_PASSES 1U
+#endif
 
 /* Pairwise cohesion approximates surface tension, without attracting distant drops.
  * Strength 0 disables it; start with 2..8. Radius uses the max+half-min distance norm. */

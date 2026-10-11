@@ -60,10 +60,10 @@ static void sample_input(const imu_snapshot_t *snapshot, bool healthy)
     else
     {
         /* Filter at the 100Hz sample rate, not the 25Hz physics rate. */
-        effect.filtered_x +=
-            ((int32_t)snapshot->sample.x - effect.filtered_x) * FLUID_INPUT_FILTER_Q8 / 256;
-        effect.filtered_y +=
-            ((int32_t)snapshot->sample.y - effect.filtered_y) * FLUID_INPUT_FILTER_Q8 / 256;
+        effect.filtered_x += ((int32_t)snapshot->sample.x - effect.filtered_x) *
+                             (int32_t)FLUID_INPUT_FILTER_Q8 / 256;
+        effect.filtered_y += ((int32_t)snapshot->sample.y - effect.filtered_y) *
+                             (int32_t)FLUID_INPUT_FILTER_Q8 / 256;
     }
     effect.input_sequence = snapshot->sequence;
     effect.input_valid = true;

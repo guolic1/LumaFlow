@@ -70,13 +70,14 @@ static int32_t absolute(int32_t value)
 
 static int16_t speed(int32_t value)
 {
-    if (value > FLUID_MAX_SPEED)
+    const int32_t limit = (int32_t)FLUID_MAX_SPEED;
+    if (value > limit)
     {
-        value = FLUID_MAX_SPEED;
+        value = limit;
     }
-    if (value < -FLUID_MAX_SPEED)
+    if (value < -limit)
     {
-        value = -FLUID_MAX_SPEED;
+        value = -limit;
     }
     return (int16_t)value;
 }
@@ -105,7 +106,7 @@ static void wall_impulse(fluid_particle_t *p, int32_t nx, int32_t ny)
     int32_t outward = (p->vx * nx + p->vy * ny) / FLUID_UNIT;
     if (outward > 0)
     {
-        int32_t impulse = outward + outward * FLUID_WALL_RESTITUTION_Q8 / 256;
+        int32_t impulse = outward + outward * (int32_t)FLUID_WALL_RESTITUTION_Q8 / 256;
         p->vx = speed(p->vx - impulse * nx / FLUID_UNIT);
         p->vy = speed(p->vy - impulse * ny / FLUID_UNIT);
     }
@@ -258,8 +259,8 @@ bool fluid_sim_begin(fluid_sim_t *sim, int16_t raw_x, int16_t raw_y)
     }
     /* Specific force has the opposite sign to apparent gravity.
      * Gain is artistic, not a metric length calibration. Scale the impulse with dt. */
-    sim->gravity_x = speed(scale_step(-(int32_t)raw_x / FLUID_ACCEL_DIVISOR));
-    sim->gravity_y = speed(scale_step(-(int32_t)raw_y / FLUID_ACCEL_DIVISOR));
+    sim->gravity_x = speed(scale_step(-(int32_t)raw_x / (int32_t)FLUID_ACCEL_DIVISOR));
+    sim->gravity_y = speed(scale_step(-(int32_t)raw_y / (int32_t)FLUID_ACCEL_DIVISOR));
     sim->phase = FLUID_PHASE_MOVE;
     sim->cursor = 0U;
     sim->iteration = 0U;
@@ -305,10 +306,10 @@ static void separate(fluid_sim_t *sim)
                     {
                         weight = edge;
                     }
-                    int32_t sx =
-                        scale_step(dx) * weight * FLUID_SURFACE_TENSION_Q8 / (FLUID_UNIT * 256);
-                    int32_t sy =
-                        scale_step(dy) * weight * FLUID_SURFACE_TENSION_Q8 / (FLUID_UNIT * 256);
+                    int32_t sx = scale_step(dx) * weight * (int32_t)FLUID_SURFACE_TENSION_Q8 /
+                                 (FLUID_UNIT * 256);
+                    int32_t sy = scale_step(dy) * weight * (int32_t)FLUID_SURFACE_TENSION_Q8 /
+                                 (FLUID_UNIT * 256);
                     a->vx = speed(a->vx + sx);
                     a->vy = speed(a->vy + sy);
                     b->vx = speed(b->vx - sx);
@@ -498,7 +499,8 @@ static void transfer(fluid_sim_t *sim)
             {
                 int32_t pic = divide_small(pic_sum, total);
                 int32_t flip = *velocity + divide_small(delta_sum, total);
-                *velocity = speed(((256 - FLUID_FLIP_Q8) * pic + FLUID_FLIP_Q8 * flip) / 256);
+                *velocity = speed(
+                    ((256 - (int32_t)FLUID_FLIP_Q8) * pic + (int32_t)FLUID_FLIP_Q8 * flip) / 256);
             }
         }
         collide(p);
@@ -518,8 +520,8 @@ bool fluid_sim_advance(fluid_sim_t *sim)
         for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
         {
             fluid_particle_t *p = &sim->particles[i];
-            p->vx = speed(p->vx * FLUID_VELOCITY_RETAIN_Q8 / 256 + sim->gravity_x);
-            p->vy = speed(p->vy * FLUID_VELOCITY_RETAIN_Q8 / 256 + sim->gravity_y);
+            p->vx = speed(p->vx * (int32_t)FLUID_VELOCITY_RETAIN_Q8 / 256 + sim->gravity_x);
+            p->vy = speed(p->vy * (int32_t)FLUID_VELOCITY_RETAIN_Q8 / 256 + sim->gravity_y);
             move(p);
         }
         sim->phase = FLUID_PHASE_SEPARATE;

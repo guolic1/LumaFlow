@@ -59,6 +59,29 @@ else()
     target_compile_options(fluid_effect_test PRIVATE -Wall -Wextra -Werror)
 endif()
 add_test(NAME fluid_effect_test COMMAND fluid_effect_test)
+
+# Exercise disabled effects and coefficient limits in independently compiled cores.
+foreach(variant IN ITEMS fluid_controls_disabled_test fluid_controls_extreme_test)
+    add_executable(${variant} fluid_controls_test.c ../application/fluid_sim.c
+        ../application/fluid_effect.c)
+    target_include_directories(${variant} PRIVATE ../application)
+    if(MSVC)
+        target_compile_options(${variant} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${variant} PRIVATE -Wall -Wextra -Werror)
+    endif()
+    target_compile_definitions(${variant} PRIVATE FLUID_ACCEL_DIVISOR=16U)
+    add_test(NAME ${variant} COMMAND ${variant})
+endforeach()
+target_compile_definitions(fluid_controls_disabled_test PRIVATE
+    FLUID_VELOCITY_RETAIN_Q8=256U FLUID_WALL_RESTITUTION_Q8=0U FLUID_SURFACE_TENSION_Q8=0U
+    FLUID_INPUT_FILTER_Q8=0U FLUID_FLIP_Q8=128U FLUID_DENSITY_CORRECTION_DIVISOR=2U
+    FLUID_RENDER_THRESHOLD=600 FLUID_RENDER_WEIGHT_DIVISOR=1024)
+target_compile_definitions(fluid_controls_extreme_test PRIVATE
+    FLUID_VELOCITY_RETAIN_Q8=0U FLUID_WALL_RESTITUTION_Q8=256U FLUID_SURFACE_TENSION_Q8=32U
+    FLUID_SURFACE_TENSION_RADIUS=2048 FLUID_SEPARATION_PASSES=2
+    FLUID_INPUT_FILTER_Q8=256U FLUID_FLIP_Q8=256U FLUID_DENSITY_CORRECTION_DIVISOR=1U)
+
 add_executable(qma6100p_test qma6100p_test.c ../application/qma6100p.c)
 target_include_directories(qma6100p_test PRIVATE ../application)
 if(MSVC)
