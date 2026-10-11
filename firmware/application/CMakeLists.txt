@@ -1,5 +1,8 @@
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     commands.c
+    imu.c
+    imu_stm32.c
+    qma6100p.c
     led_matrix.c
     led_matrix_scan.c
     main.c

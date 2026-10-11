@@ -3,6 +3,7 @@
 #include "commands.h"
 #include "dma.h"
 #include "i2c.h"
+#include "imu.h"
 #include "led_matrix.h"
 #include "serial_uart.h"
 
@@ -32,13 +33,16 @@ int main(void)
     {
         Error_Handler();
     }
+    imu_init();
 
     while (1)
     {
+        imu_poll();
         command_server_poll(&command_server);
 
         if (application_commands_take_bootloader_request())
         {
+            imu_stop();
             led_matrix_stop();
             serial_uart_flush();
             NVIC_SystemReset();
