@@ -37,6 +37,7 @@ Review Scope: 模拟核心、Application 接入、只读性能查询及对应测
 - [x] P3-T2：精确倒数及面邻接表、核心 -O2、Application Flash 预取；验证数学边界、1200 步差分及 ARM 指令数。
 - [x] P3-T3：64 粒子及一次分离，缩放填充参数、兼容旧性能查询；检查实际 C 画面、CTest、ASan/UBSan、ARM 构建和 PowerShell 回归。
 - [ ] 板上复测 LastStepUs、MissedSteps、IMU missed_ticks 及左上斜边微亮；未自动烧录。
+- [ ] 照片已定位 IO16 阳极暗亮线及 R5 外部上拉供电路径；PF2 为 GPIO 时断开 R5 后实板复测，IO17 拉低不能处理此路径。
 
 ## Completion
 
