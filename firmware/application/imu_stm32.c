@@ -80,6 +80,11 @@ uint32_t imu_platform_time_ms(void)
     return timer_now(true);
 }
 
+uint32_t imu_platform_time_us(void)
+{
+    return timer_now(false);
+}
+
 void imu_platform_delay_ms(uint32_t duration)
 {
     uint32_t start = imu_platform_time_ms();

@@ -2,6 +2,7 @@
 #include "adc.h"
 #include "commands.h"
 #include "dma.h"
+#include "fluid_effect.h"
 #include "i2c.h"
 #include "imu.h"
 #include "led_matrix.h"
@@ -34,6 +35,7 @@ int main(void)
         Error_Handler();
     }
     imu_init();
+    fluid_effect_init();
 
     while (1)
     {
@@ -47,5 +49,6 @@ int main(void)
             serial_uart_flush();
             NVIC_SystemReset();
         }
+        fluid_effect_poll();
     }
 }

@@ -12,7 +12,7 @@ pwsh -File scripts/lumaflow.ps1 -Command ota -Port COM3 -Image application.bin -
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota', 'imu')]
+    [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota', 'imu', 'fluid')]
     [string]$Command = 'info',
     [string]$Port,
     [ValidateRange(1, 10000000)][int]$BaudRate = 1000000,
@@ -147,7 +147,7 @@ function Invoke-SerialCommand(
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $nextSend = 0
     # The firmware has no duplicate suppression for reset, boot or flash commands.
-    $retry = $CommandId -in @(1, 2, 0x23, 0x30)
+    $retry = $CommandId -in @(1, 2, 0x23, 0x30, 0x31)
     while ($timer.ElapsedMilliseconds -lt $TimeoutMs) {
         if ($timer.ElapsedMilliseconds -ge $nextSend) {
             $Client.Port.WriteTimeout = [Math]::Max(1, $TimeoutMs - [int]$timer.ElapsedMilliseconds)
@@ -237,6 +237,31 @@ function Get-DeviceImu($Client, [int]$TimeoutMs = 5000) {
         MissedTicks = [BitConverter]::ToUInt32($data, 20)
         StatusCode = [int]$data[24]; Status = $statusNames[$data[24]]
         RangeG = [int]$data[25]; SampleRateHz = 100
+    }
+}
+
+function Get-DeviceFluid($Client, [int]$TimeoutMs = 5000) {
+    $data = Invoke-SerialCommand $Client 0x31 -TimeoutMs $TimeoutMs
+    if ($data.Length -ne 32) { throw 'Invalid GET_FLUID response length.' }
+    $work = [BitConverter]::ToUInt32($data, 4)
+    $maximum = [BitConverter]::ToUInt32($data, 8)
+    $particles = [BitConverter]::ToUInt16($data, 24)
+    $memory = [BitConverter]::ToUInt16($data, 28)
+    $rate = [BitConverter]::ToUInt16($data, 30)
+    if ($work -gt $maximum -or $particles -ne 128 -or $data[26] -ne 13 -or
+        $data[27] -ne 13 -or $memory -eq 0 -or $memory -gt 8192 -or $rate -ne 50) {
+        throw 'Invalid GET_FLUID response fields.'
+    }
+    return [pscustomobject]@{
+        CompletedSteps = [BitConverter]::ToUInt32($data, 0)
+        LastWorkUs = $work; MaxWorkUs = $maximum
+        LastStepUs = [BitConverter]::ToUInt32($data, 12)
+        MissedSteps = [BitConverter]::ToUInt32($data, 16)
+        MaxSliceUs = [BitConverter]::ToUInt32($data, 20)
+        ParticleCount = $particles
+        GridWidth = [int]$data[26]; GridHeight = [int]$data[27]
+        StateBytes = $memory; TargetHz = $rate
+        WorkBudgetPercent = [Math]::Round($work * [double]$rate / 10000.0, 2)
     }
 }
 
@@ -415,6 +440,7 @@ Commands (-Command defaults to info):
   boot-application   Request boot of a valid Application from Bootloader.
   status             Show update state and next offset (Bootloader only).
   imu                Read the latest IMU sample and health status (Application).
+  fluid              Show PIC/FLIP computation timing and memory (Application).
   ota                Upload, verify and commit an Application .bin, then boot.
 
 Options:
@@ -430,7 +456,7 @@ Options:
 
 If the serial port is missing or busy, opening it is retried every 100 ms
 until it becomes available. Press Ctrl+C to cancel this wait.
-PING, GET_INFO, GET_IMU and GET_UPDATE_STATUS are resent every 100 ms while silent,
+PING, GET_INFO, GET_IMU, GET_FLUID and GET_UPDATE_STATUS are resent every 100 ms while silent,
 using one overall command deadline. Reset/boot commands probe the current image
 between attempts and wait for the target image to respond.
 
@@ -439,6 +465,7 @@ Examples: (run from firmware/; replace COM14 with your device port)
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command info -Port COM14
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ping -Port COM14 -Text hello
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command imu -Port COM14
+  powershell -NoProfile -File scripts/lumaflow.ps1 -Command fluid -Port COM14
   powershell -NoProfile -File scripts/imu.ps1 -Port COM14
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ota -Port COM14 -Image application.bin -FirmwareVersion 1
 
@@ -486,6 +513,7 @@ You can use pwsh instead of powershell for PowerShell 7.
             }
             'status' { Get-DeviceUpdateStatus $client $TimeoutMs }
             'imu' { Get-DeviceImu $client $TimeoutMs }
+            'fluid' { Get-DeviceFluid $client $TimeoutMs }
             'ota' { Invoke-ApplicationUpdate $client $imageData $FirmwareVersion $TimeoutMs -NoBoot:$NoBoot }
         }
     } catch {

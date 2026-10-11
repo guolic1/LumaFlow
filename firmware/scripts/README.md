@@ -119,6 +119,16 @@ failed 状态可直接重新执行 OTA。工具不跨进程断点续传。
 
 ## 验证
 
+PIC/FLIP 固件启动后默认运行液体效果。查询实际负载：
+
+```powershell
+powershell -NoProfile -File scripts/lumaflow.ps1 -Command fluid -Port COM9
+```
+
+`CompletedSteps` 是已完成模拟步数；`LastWorkUs` / `MaxWorkUs` 是各计算片段及渲染耗时之和，包含抢占中断；`MaxSliceUs` 是最长单片段。`LastStepUs` 包含段间 IMU/串口和故障暂停，属于墙钟耗时。`WorkBudgetPercent` 为 LastWorkUs 占目标 20ms 周期的百分比，不能直接当作纯 CPU 使用率。`MissedSteps` 表示因计算忙、显示背压、IMU 无效等未启动的模拟周期。`StateBytes` 是效果全部静态状态（含输出缓冲），`TargetHz` 仅表示目标频率。
+
+先确认 IMU 健康，再连续查询：正常应看到步骤持续增加、MissedSteps 不持续增加。LastStepUs 超过 20000µs 说明该步未在一个目标周期内完成；同时用 `imu.ps1` 检查 missed_ticks。旧固件或 Bootloader 不支持 0x31，会明确返回 BAD_COMMAND。只读查询允许静默重试。
+
 主机测试不需要硬件，也不会打开真实串口：
 
 ```powershell
@@ -128,6 +138,7 @@ pwsh -NoProfile -File scripts/tests/serial_test.ps1
 pwsh -NoProfile -File scripts/tests/ota_test.ps1
 pwsh -NoProfile -File scripts/tests/ota_flash_test.ps1
 pwsh -NoProfile -File scripts/tests/imu_test.ps1
+pwsh -NoProfile -File scripts/tests/fluid_test.ps1
 ```
 
 OTA 测试包括协议测试、复位后丢失一次探测、完整/最大镜像、块大小协商、非对齐末块、

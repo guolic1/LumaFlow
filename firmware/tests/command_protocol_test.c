@@ -7,6 +7,7 @@
 #include "command_protocol.h"
 #include "common_commands.h"
 #include "commands.h"
+#include "fluid_effect.h"
 #include "imu.h"
 #include "serial_uart.h"
 
@@ -195,6 +196,35 @@ void imu_get_snapshot(imu_snapshot_t *snapshot)
     *snapshot = imu_snapshot;
 }
 
+void fluid_effect_get_stats(fluid_effect_stats_t *stats)
+{
+    *stats = (fluid_effect_stats_t){0x01020304U, 1200U, 2400U, 3000U, 7U, 190U, 3650U};
+}
+
+static void test_application_fluid(void)
+{
+    command_server_t server;
+    uint8_t response[COMMAND_PROTOCOL_MAX_RAW_FRAME_SIZE];
+    static const uint8_t expected[] = {
+        4, 3, 2, 1, 0xB0, 4, 0, 0, 0x60, 9, 0,  0,  0xB8, 0x0B, 0,  0,
+        7, 0, 0, 0, 190,  0, 0, 0, 128,  0, 13, 13, 0x42, 0x0E, 50, 0,
+    };
+    application_commands_init(&server);
+    reset_transport(&application_transport);
+    application_transport.input_length =
+        make_request(application_transport.input, 1U, 46U, 0x31U, NULL, 0U, false);
+    assert(command_server_poll(&server));
+    assert(decode_response(&application_transport, response) == 41U);
+    assert(response[4] == COMMAND_STATUS_OK && response[2] == 46U && response[3] == 0x31U);
+    assert(memcmp(&response[7], expected, sizeof(expected)) == 0);
+    reset_transport(&application_transport);
+    application_transport.input_length =
+        make_request(application_transport.input, 1U, 47U, 0x31U, expected, 1U, false);
+    assert(command_server_poll(&server));
+    assert(decode_response(&application_transport, response) == 9U);
+    assert(response[4] == COMMAND_STATUS_BAD_LENGTH);
+}
+
 static void test_application_imu(void)
 {
     command_server_t server;
@@ -244,7 +274,7 @@ static void test_application_imu(void)
         make_request(application_transport.input, 1U, 45U, COMMAND_ID_GET_INFO, NULL, 0U, false);
     assert(command_server_poll(&server));
     assert(decode_response(&application_transport, response) == 21U);
-    assert(response[7U + 8U] == 9U); /* bootloader entry + IMU read capabilities */
+    assert(response[7U + 8U] == 25U); /* bootloader entry + IMU + fluid stats */
     assert(!application_commands_take_bootloader_request());
 }
 
@@ -333,6 +363,7 @@ int main(void)
     assert(response_length == COMMAND_PROTOCOL_HEADER_SIZE + 2U);
     assert(response[4] == COMMAND_STATUS_UNSUPPORTED_VERSION);
 
+    test_application_fluid();
     test_application_imu();
     return 0;
 }

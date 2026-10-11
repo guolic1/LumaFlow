@@ -1,6 +1,8 @@
 #include "commands.h"
 
 #include "common_commands.h"
+#include "fluid_effect.h"
+#include "fluid_sim.h"
 #include "imu.h"
 #include "serial_uart.h"
 
@@ -15,7 +17,8 @@ static const command_device_info_t application_info = {
     .version_major = APPLICATION_VERSION_MAJOR,
     .version_minor = APPLICATION_VERSION_MINOR,
     .version_patch = APPLICATION_VERSION_PATCH,
-    .capabilities = COMMAND_CAPABILITY_ENTER_BOOTLOADER | COMMAND_CAPABILITY_READ_IMU,
+    .capabilities = COMMAND_CAPABILITY_ENTER_BOOTLOADER | COMMAND_CAPABILITY_READ_IMU |
+                    COMMAND_CAPABILITY_READ_FLUID,
 };
 
 static command_status_t handle_enter_bootloader(const void *context, const uint8_t *request,
@@ -75,7 +78,42 @@ static command_status_t handle_get_imu(const void *context, const uint8_t *reque
     return COMMAND_STATUS_OK;
 }
 
+static command_status_t handle_get_fluid(const void *context, const uint8_t *request,
+                                         uint16_t request_length, uint8_t *response,
+                                         uint16_t response_capacity, uint16_t *response_length)
+{
+    fluid_effect_stats_t stats;
+    (void)context;
+    (void)request;
+    (void)request_length;
+    if (response_capacity < 32U)
+    {
+        return COMMAND_STATUS_INTERNAL_ERROR;
+    }
+    fluid_effect_get_stats(&stats);
+    write_u32_le(&response[0], stats.completed_steps);
+    write_u32_le(&response[4], stats.last_work_us);
+    write_u32_le(&response[8], stats.max_work_us);
+    write_u32_le(&response[12], stats.last_step_us);
+    write_u32_le(&response[16], stats.missed_steps);
+    write_u32_le(&response[20], stats.max_slice_us);
+    write_u16_le(&response[24], FLUID_PARTICLE_COUNT);
+    response[26] = FLUID_GRID_SIZE;
+    response[27] = FLUID_GRID_SIZE;
+    write_u16_le(&response[28], stats.state_bytes);
+    write_u16_le(&response[30], FLUID_EFFECT_RATE_HZ);
+    *response_length = 32U;
+    return COMMAND_STATUS_OK;
+}
+
 static const command_entry_t application_command_table[] = {
+    {
+        .command = COMMAND_ID_GET_FLUID,
+        .minimum_length = 0U,
+        .maximum_length = 0U,
+        .handler = handle_get_fluid,
+        .context = NULL,
+    },
     {
         .command = COMMAND_ID_GET_IMU,
         .minimum_length = 0U,

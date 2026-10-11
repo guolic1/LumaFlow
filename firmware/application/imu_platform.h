@@ -8,6 +8,7 @@ bool imu_platform_start(void);
 void imu_platform_stop(void);
 uint32_t imu_platform_ticks(void);
 uint32_t imu_platform_time_ms(void);
+uint32_t imu_platform_time_us(void);
 bool imu_platform_read(uint8_t reg, uint8_t *data, uint8_t length);
 bool imu_platform_write(uint8_t reg, uint8_t value);
 void imu_platform_delay_ms(uint32_t duration);

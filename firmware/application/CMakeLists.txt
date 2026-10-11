@@ -1,5 +1,7 @@
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     commands.c
+    fluid_effect.c
+    fluid_sim.c
     imu.c
     imu_stm32.c
     qma6100p.c
