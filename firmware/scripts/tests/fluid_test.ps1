@@ -32,6 +32,14 @@ Assert-True ($result.WorkBudgetPercent -eq 6 -and $fake.Requests.Count -eq 2) 'R
 $fake = New-FakePort { param($p, $r) Add-Response $p $r (New-FluidPayload) }
 $legacy = Get-DeviceFluid (New-SerialClient $fake)
 Assert-True ($legacy.ParticleCount -eq 128) 'Legacy 128-particle firmware remains readable'
+$fake = New-FakePort {
+    param($p, $r)
+    $data = New-FluidPayload
+    $data[24] = 64; $data[30] = 30
+    Add-Response $p $r $data
+}
+$result = Get-DeviceFluid (New-SerialClient $fake)
+Assert-True ($result.TargetHz -eq 30 -and $result.WorkBudgetPercent -eq 3.6) '30Hz firmware budget conversion'
 foreach ($invalid in @('length', 'particles', 'particle_limit', 'width', 'height', 'rate', 'memory', 'timing')) {
     $script:invalidFluid = $invalid
     $fake = New-FakePort {
