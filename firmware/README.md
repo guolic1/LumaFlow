@@ -144,8 +144,26 @@ USART1 使用 `1000000 8N1`，Bootloader 和 Application 共用 CubeMX 生成的
 | `0x21` | `WRITE_CHUNK` | 是 | 否 | 按顺序写入一块镜像数据 |
 | `0x22` | `END_UPDATE` | 是 | 否 | 校验镜像并完成原子提交 |
 | `0x23` | `GET_UPDATE_STATUS` | 是 | 否 | 查询升级状态和下一个写入偏移 |
+| `0x30` | `GET_IMU` | 否 | 是 | 查询最新三轴数据、时间戳及采集状态 |
 
 `GET_INFO` 的 12 字节 payload 依次为：协议版本、镜像类型、固件主/次/补丁版本、保留字节、最大 payload（2 字节）、能力位（4 字节）。镜像类型 `1` 表示 Bootloader，`2` 表示 Application。
+
+Application 的能力位 bit3 表示支持 `GET_IMU`。其请求 payload 为空，成功响应 payload 为 28 字节：
+
+| 偏移 | 类型 | 含义 |
+|---|---|---|
+| 0 | uint32 | 成功读取序号 |
+| 4 | uint32 | 读取开始时的毫秒时间戳 |
+| 8/10/12 | int16 | X/Y/Z 原始加速度，除以 4096 得 g |
+| 14 | uint8 | NEWDATA，bit0/1/2 对应 X/Y/Z |
+| 15 | uint8 | bit0：已有有效样本；bit1：初始化完成 |
+| 16 | uint32 | 累计读取错误数 |
+| 20 | uint32 | 累计漏处理的定时周期数 |
+| 24 | uint8 | 0 OK、1 BUS_ERROR、2 CHIP_ID_ERROR、3 CONFIG_ERROR、4 NOT_READY、5 STOPPED |
+| 25 | uint8 | 量程，固定 2g |
+| 26 | uint16 | MCU 名义读取频率，固定 100Hz |
+
+全部多字节字段为小端；序号、时间戳和计数按 uint32 回绕。协议状态 OK 仅表示查询成功，必须同时检查器件状态和 valid 位；读取失败时返回的轴值可能是旧缓存。此查询不触发新的 I2C 读取，也不改变采集频率。
 
 升级命令 payload 和响应如下：
 

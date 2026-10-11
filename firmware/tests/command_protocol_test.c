@@ -6,6 +6,9 @@
 
 #include "command_protocol.h"
 #include "common_commands.h"
+#include "commands.h"
+#include "imu.h"
+#include "serial_uart.h"
 
 #define TEST_BUFFER_SIZE 512U
 
@@ -172,6 +175,79 @@ static void reset_transport(fake_transport_t *transport)
     memset(transport, 0, sizeof(*transport));
 }
 
+static fake_transport_t application_transport;
+static imu_snapshot_t imu_snapshot;
+
+bool serial_uart_read_byte(void *context, uint8_t *byte)
+{
+    (void)context;
+    return fake_read(&application_transport, byte);
+}
+
+void serial_uart_write(void *context, const uint8_t *data, size_t length)
+{
+    (void)context;
+    fake_write(&application_transport, data, length);
+}
+
+void imu_get_snapshot(imu_snapshot_t *snapshot)
+{
+    *snapshot = imu_snapshot;
+}
+
+static void test_application_imu(void)
+{
+    command_server_t server;
+    uint8_t response[COMMAND_PROTOCOL_MAX_RAW_FRAME_SIZE];
+    static const uint8_t expected[] = {
+        4, 3, 2, 1, 0x40, 0x30, 0x20, 0x10, 0, 0xE0, 0xFF, 0x1F, 0,   0xF0,
+        5, 3, 2, 0, 0,    0,    3,    0,    0, 0,    0,    2,    100, 0,
+    };
+    imu_snapshot = (imu_snapshot_t){
+        .sample = {-8192, 8191, -4096, 5U},
+        .sequence = 0x01020304U,
+        .timestamp_ms = 0x10203040U,
+        .read_errors = 2U,
+        .missed_ticks = 3U,
+        .status = IMU_OK,
+        .valid = true,
+        .ready = true,
+    };
+    application_commands_init(&server);
+    reset_transport(&application_transport);
+    application_transport.input_length =
+        make_request(application_transport.input, 1U, 42U, 0x30U, NULL, 0U, false);
+    assert(command_server_poll(&server));
+    assert(decode_response(&application_transport, response) == 37U);
+    assert(response[4] == COMMAND_STATUS_OK && response[2] == 42U && response[3] == 0x30U);
+    assert(memcmp(&response[7], expected, sizeof(expected)) == 0);
+
+    imu_snapshot.valid = false;
+    imu_snapshot.ready = false;
+    imu_snapshot.status = IMU_CHIP_ID_ERROR;
+    reset_transport(&application_transport);
+    application_transport.input_length =
+        make_request(application_transport.input, 1U, 43U, 0x30U, NULL, 0U, false);
+    assert(command_server_poll(&server));
+    assert(decode_response(&application_transport, response) == 37U);
+    assert(response[7U + 15U] == 0U && response[7U + 24U] == IMU_CHIP_ID_ERROR);
+
+    reset_transport(&application_transport);
+    application_transport.input_length =
+        make_request(application_transport.input, 1U, 44U, 0x30U, expected, 1U, false);
+    assert(command_server_poll(&server));
+    assert(decode_response(&application_transport, response) == 9U);
+    assert(response[4] == COMMAND_STATUS_BAD_LENGTH);
+
+    reset_transport(&application_transport);
+    application_transport.input_length =
+        make_request(application_transport.input, 1U, 45U, COMMAND_ID_GET_INFO, NULL, 0U, false);
+    assert(command_server_poll(&server));
+    assert(decode_response(&application_transport, response) == 21U);
+    assert(response[7U + 8U] == 9U); /* bootloader entry + IMU read capabilities */
+    assert(!application_commands_take_bootloader_request());
+}
+
 int main(void)
 {
     static const command_device_info_t device_info = {
@@ -257,5 +333,6 @@ int main(void)
     assert(response_length == COMMAND_PROTOCOL_HEADER_SIZE + 2U);
     assert(response[4] == COMMAND_STATUS_UNSUPPORTED_VERSION);
 
+    test_application_imu();
     return 0;
 }

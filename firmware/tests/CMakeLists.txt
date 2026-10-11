@@ -9,9 +9,12 @@ add_executable(command_protocol_test
     command_protocol_test.c
     ../common/protocol/command_protocol.c
     ../common/protocol/common_commands.c
+    ../application/commands.c
 )
 target_include_directories(command_protocol_test PRIVATE
     ../common/protocol
+    ../application
+    ../common/platform
 )
 
 add_executable(application_image_test
