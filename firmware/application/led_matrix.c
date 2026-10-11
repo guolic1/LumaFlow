@@ -5,7 +5,8 @@
 #include "main.h"
 
 #define LED_MATRIX_TIMER_CLOCK_HZ 64000000UL
-#define LED_MATRIX_TIMER_TICKS 3975U
+/* Round 64MHz / (161 slots * 120Hz) to the nearest timer count: 119.987Hz. */
+#define LED_MATRIX_TIMER_TICKS 3313U
 #define LED_MATRIX_GPIO_COUNT 18U
 #define LED_MATRIX_PORT_COUNT LED_MATRIX_GPIO_PORT_COUNT
 
