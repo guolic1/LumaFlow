@@ -12,7 +12,7 @@ pwsh -File scripts/lumaflow.ps1 -Command ota -Port COM3 -Image application.bin -
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota')]
+    [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota', 'imu')]
     [string]$Command = 'info',
     [string]$Port,
     [ValidateRange(1, 10000000)][int]$BaudRate = 1000000,
@@ -147,7 +147,7 @@ function Invoke-SerialCommand(
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $nextSend = 0
     # The firmware has no duplicate suppression for reset, boot or flash commands.
-    $retry = $CommandId -in @(1, 2, 0x23)
+    $retry = $CommandId -in @(1, 2, 0x23, 0x30)
     while ($timer.ElapsedMilliseconds -lt $TimeoutMs) {
         if ($timer.ElapsedMilliseconds -ge $nextSend) {
             $Client.Port.WriteTimeout = [Math]::Max(1, $TimeoutMs - [int]$timer.ElapsedMilliseconds)
@@ -209,6 +209,34 @@ function Get-DeviceInfo($Client, [int]$TimeoutMs = 5000) {
         Version = '{0}.{1}.{2}' -f $data[2], $data[3], $data[4]
         MaxPayload = [BitConverter]::ToUInt16($data, 6)
         Capabilities = [BitConverter]::ToUInt32($data, 8)
+    }
+}
+
+function Get-DeviceImu($Client, [int]$TimeoutMs = 5000) {
+    $data = Invoke-SerialCommand $Client 0x30 -TimeoutMs $TimeoutMs
+    if ($data.Length -ne 28) { throw 'Invalid GET_IMU response length.' }
+    $x = [BitConverter]::ToInt16($data, 8)
+    $y = [BitConverter]::ToInt16($data, 10)
+    $z = [BitConverter]::ToInt16($data, 12)
+    $statusNames = @('OK', 'BUS_ERROR', 'CHIP_ID_ERROR', 'CONFIG_ERROR', 'NOT_READY', 'STOPPED')
+    if ($data[14] -gt 7 -or $data[15] -gt 3 -or $data[24] -ge $statusNames.Length -or
+        $data[25] -ne 2 -or [BitConverter]::ToUInt16($data, 26) -ne 100 -or
+        $x -lt -8192 -or $x -gt 8191 -or $y -lt -8192 -or $y -gt 8191 -or
+        $z -lt -8192 -or $z -gt 8191) {
+        throw 'Invalid GET_IMU response fields.'
+    }
+    return [pscustomobject]@{
+        Sequence = [BitConverter]::ToUInt32($data, 0)
+        TimestampMs = [BitConverter]::ToUInt32($data, 4)
+        RawX = $x; RawY = $y; RawZ = $z
+        Xg = $x / 4096.0; Yg = $y / 4096.0; Zg = $z / 4096.0
+        NewData = [int]$data[14]
+        Valid = ($data[15] -band 1) -ne 0
+        Ready = ($data[15] -band 2) -ne 0
+        ReadErrors = [BitConverter]::ToUInt32($data, 16)
+        MissedTicks = [BitConverter]::ToUInt32($data, 20)
+        StatusCode = [int]$data[24]; Status = $statusNames[$data[24]]
+        RangeG = [int]$data[25]; SampleRateHz = 100
     }
 }
 
@@ -386,6 +414,7 @@ Commands (-Command defaults to info):
   enter-bootloader   Enter Bootloader and re-establish communication.
   boot-application   Request boot of a valid Application from Bootloader.
   status             Show update state and next offset (Bootloader only).
+  imu                Read the latest IMU sample and health status (Application).
   ota                Upload, verify and commit an Application .bin, then boot.
 
 Options:
@@ -401,7 +430,7 @@ Options:
 
 If the serial port is missing or busy, opening it is retried every 100 ms
 until it becomes available. Press Ctrl+C to cancel this wait.
-PING, GET_INFO and GET_UPDATE_STATUS are resent every 100 ms while silent,
+PING, GET_INFO, GET_IMU and GET_UPDATE_STATUS are resent every 100 ms while silent,
 using one overall command deadline. Reset/boot commands probe the current image
 between attempts and wait for the target image to respond.
 
@@ -409,6 +438,8 @@ Examples: (run from firmware/; replace COM14 with your device port)
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ports
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command info -Port COM14
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ping -Port COM14 -Text hello
+  powershell -NoProfile -File scripts/lumaflow.ps1 -Command imu -Port COM14
+  powershell -NoProfile -File scripts/imu.ps1 -Port COM14
   powershell -NoProfile -File scripts/lumaflow.ps1 -Command ota -Port COM14 -Image application.bin -FirmwareVersion 1
 
 OTA requires an installed Bootloader and erases the old Application.
@@ -454,6 +485,7 @@ You can use pwsh instead of powershell for PowerShell 7.
                 Write-Output 'Application is running.'
             }
             'status' { Get-DeviceUpdateStatus $client $TimeoutMs }
+            'imu' { Get-DeviceImu $client $TimeoutMs }
             'ota' { Invoke-ApplicationUpdate $client $imageData $FirmwareVersion $TimeoutMs -NoBoot:$NoBoot }
         }
     } catch {

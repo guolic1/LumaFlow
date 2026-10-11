@@ -12,6 +12,7 @@ pwsh -NoProfile -File scripts/lumaflow.ps1 -Command ping -Port COM3 -Text hello
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command enter-bootloader -Port COM3
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command status -Port COM3
 pwsh -NoProfile -File scripts/lumaflow.ps1 -Command boot-application -Port COM3
+pwsh -NoProfile -File scripts/lumaflow.ps1 -Command imu -Port COM3
 ```
 
 使用 Windows PowerShell 时将 `pwsh` 换成 `powershell`。
@@ -27,11 +28,40 @@ pwsh -NoProfile -File scripts/lumaflow.ps1 -Command boot-application -Port COM3
 串口在退出或异常时释放。请关闭占用同一串口的终端或其他工具。
 指定串口不存在或被占用时，工具会每隔 100 ms 重试打开，直到串口可用；等待没有时间上限，
 可用 Ctrl+C 取消。无效参数等非串口可用性错误会直接报错，可用 `-Verbose` 查看每次打开失败的原因。
-打开串口后，PING、设备信息和升级状态查询在没有有效响应时，每隔约 100 ms 重发同一请求；
+打开串口后，PING、设备信息、IMU 和升级状态查询在没有有效响应时，每隔约 100 ms 重发同一请求；
 5 秒是每条命令所有重试共用的总超时，不会在每次重试时重新计时。收到设备错误码时立即报错；
 成功响应即使 payload 为空也算收到响应。损坏或无关帧不会终止重试。
 复位和启动命令采用设备信息探测：只在设备仍处于原镜像、且未收到切换确认时重发；
 收到确认后仅继续探测，避免重复复位。每次镜像切换（包括探测和重发）共用 `-TimeoutMs` 的总超时。
+
+## IMU 持续读取
+
+烧录本次 Application 后，`lumaflow.ps1 -Command imu` 返回一次最新三轴数据和器件健康状态。
+持续读取使用 `imu.ps1`，无需第三方模块：
+
+```powershell
+pwsh -NoProfile -File scripts/imu.ps1 -Port COM3
+# 输出 1000 个不同读取序号后退出：
+pwsh -NoProfile -File scripts/imu.ps1 -Port COM3 -Count 1000
+# CSV 保存（从当前 PowerShell 调用）：
+.\scripts\imu.ps1 -Port COM3 -Count 1000 | Set-Content -Encoding utf8 imu.csv
+pwsh -NoProfile -File scripts/imu.ps1 -Help
+```
+
+固件由 TIM3 每 10ms 调度 I2C 读取，读取频率不依赖脚本。脚本每 10ms 请求最新值，
+跳过重复序号，默认持续运行直到 Ctrl+C，并在退出或异常时释放串口。`-Count 0` 表示持续运行。
+先检查当前镜像及 GET_IMU 能力，Bootloader 或旧 Application 会报错，不自动切换镜像。
+支持 `-BaudRate`、`-TimeoutMs`、`-Verbose`、`-Help` / `-h`；串口等待行为与通用工具一致。
+
+CSV 列为 `sequence,timestamp_ms,x_g,y_g,z_g,new_data,read_errors,missed_ticks,host_skipped`。
+XYZ 单位为 g，固定 ±2g 量程；`new_data` 的 bit0/1/2 分别表示 X/Y/Z 自上次读取后更新。
+序号对每次成功的设备读取递增，因此 NEWDATA=0 的记录仍可能出现。时间戳为设备读取开始时的毫秒数。
+`read_errors` 是设备累计 I2C 读取失败数，`missed_ticks` 是设备主循环漏处理周期累计数，
+`host_skipped` 是相邻输出之间未被脚本取到的成功读取数；这些列可以区分设备采集和主机取数的遗漏。
+主机调度、串口往返与终端显示可能使实际输出少于每秒 100 行，工具不保证保存每个样本。
+
+初始化或读取错误会立即报告；尚未得到首个有效样本、或读取序号一直不变时，最多等待 `-TimeoutMs`。
+此时返回非零退出码，不把旧缓存当成持续更新的数据。传感器 ODR 配置与并行扫描需要实板验证，详见固件 README。
 
 ## OTA 升级
 
@@ -97,6 +127,7 @@ pwsh -NoProfile -File scripts/tests/connection_test.ps1
 pwsh -NoProfile -File scripts/tests/serial_test.ps1
 pwsh -NoProfile -File scripts/tests/ota_test.ps1
 pwsh -NoProfile -File scripts/tests/ota_flash_test.ps1
+pwsh -NoProfile -File scripts/tests/imu_test.ps1
 ```
 
 OTA 测试包括协议测试、复位后丢失一次探测、完整/最大镜像、块大小协商、非对齐末块、
@@ -107,3 +138,5 @@ CLI 测试验证 `-Help` / `-h` 的输出，以及帮助模式跳过串口和镜
 专用烧录入口测试在临时目录模拟 CMake 和 OTA 命令，验证默认 Release、Debug、已有 BIN、
 带空格路径、参数传递、配置/编译失败停止、输出缺失及 OTA 错误码传递；不会打开真实串口。
 模拟测试不能证明 USB 串口驱动的 1 Mbps 支持、真实复位窗口或 Flash 擦写；这些需要开发板实测。
+IMU 测试覆盖协议长度与字段校验、14 位符号/量程换算、连续循环、序号去重与回绕、漏取统计、
+器件错误、无新读取超时、只读请求重试，以及帮助模式跳过串口操作。
