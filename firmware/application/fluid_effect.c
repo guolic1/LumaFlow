@@ -35,6 +35,9 @@ _Static_assert(IMU_SAMPLE_RATE_HZ % FLUID_EFFECT_RATE_HZ == 0U,
 
 #define IMU_TICKS_PER_STEP (IMU_SAMPLE_RATE_HZ / FLUID_EFFECT_RATE_HZ)
 
+_Static_assert(FLUID_INPUT_FILTER_Q8 >= 0 && FLUID_INPUT_FILTER_Q8 <= 256,
+               "Input filter coefficient must be in 0..256");
+
 static void sample_input(const imu_snapshot_t *snapshot, bool healthy)
 {
     if (!healthy)
@@ -57,8 +60,10 @@ static void sample_input(const imu_snapshot_t *snapshot, bool healthy)
     else
     {
         /* Filter at the 100Hz sample rate, not the 25Hz physics rate. */
-        effect.filtered_x += ((int32_t)snapshot->sample.x - effect.filtered_x) / 2;
-        effect.filtered_y += ((int32_t)snapshot->sample.y - effect.filtered_y) / 2;
+        effect.filtered_x +=
+            ((int32_t)snapshot->sample.x - effect.filtered_x) * FLUID_INPUT_FILTER_Q8 / 256;
+        effect.filtered_y +=
+            ((int32_t)snapshot->sample.y - effect.filtered_y) * FLUID_INPUT_FILTER_Q8 / 256;
     }
     effect.input_sequence = snapshot->sequence;
     effect.input_valid = true;

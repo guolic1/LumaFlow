@@ -3,21 +3,40 @@
 #include <stddef.h>
 #include <string.h>
 
-#define UNIT 1024
-#define WALL 4559
-#define MAX_SPEED 16384
-#define PARTICLE_DISTANCE 680
-#define REST_DENSITY 512U
-#define LED_PITCH 704
-#define LED_ROW_PITCH 610
-#define RENDER_RADIUS 800
-#define SEPARATION_PASSES 1U
-
 #include "fluid_sim_tables.h"
 
-_Static_assert(FLUID_PARTICLE_COUNT <= UINT8_MAX && FLUID_PARTICLE_COUNT % 16U == 0U,
+_Static_assert(FLUID_PARTICLE_COUNT > 0U && FLUID_PARTICLE_COUNT <= UINT8_MAX &&
+                   FLUID_PARTICLE_COUNT % 16U == 0U,
                "Particle batches must fit the bounded cursor");
 _Static_assert(FLUID_GRID_STRIDE == FLUID_GRID_SIZE + 1U, "MAC face guard stride mismatch");
+_Static_assert(FLUID_UNIT == 1024, "Normals and interpolation require a 1024-unit grid");
+_Static_assert(FLUID_SIM_RATE_HZ >= 25U && FLUID_SIM_RATE_HZ <= 100U && FLUID_MAX_SPEED > 0 &&
+                   FLUID_MAX_SPEED <= 16384,
+               "Speed and timestep must fit wide collision arithmetic");
+_Static_assert(FLUID_WALL >= FLUID_UNIT && FLUID_WALL <= 4800,
+               "Collision walls must stay within the grid guard cells");
+_Static_assert(FLUID_PARTICLE_DISTANCE > 0 && FLUID_PARTICLE_DISTANCE <= 705 &&
+                   FLUID_LED_PITCH > 0 && FLUID_LED_PITCH <= 704 && FLUID_LED_ROW_PITCH > 0 &&
+                   FLUID_LED_ROW_PITCH <= 704,
+               "Distances must fit the reciprocal table");
+_Static_assert(FLUID_PRESSURE_ITERATIONS > 0U && FLUID_PRESSURE_ITERATIONS <= UINT8_MAX &&
+                   FLUID_SEPARATION_PASSES > 0U && FLUID_SEPARATION_PASSES <= UINT8_MAX,
+               "Solver iteration counts must fit their cursors");
+_Static_assert(FLUID_ACCEL_DIVISOR > 0 && FLUID_FLIP_Q8 >= 0 && FLUID_FLIP_Q8 <= 256 &&
+                   FLUID_DENSITY_CORRECTION_DIVISOR > 0 && FLUID_REST_DENSITY <= UINT16_MAX,
+               "Force and pressure coefficients are out of range");
+_Static_assert(FLUID_INITIAL_X_PITCH > 0 && FLUID_INITIAL_ROW_PITCH > 0 &&
+                   FLUID_INITIAL_WALL_INSET >= 0 && FLUID_INITIAL_WALL_INSET < FLUID_WALL,
+               "Initial particle spacing and inset must be valid");
+_Static_assert(FLUID_RENDER_RADIUS > 0 && FLUID_RENDER_RADIUS * 2 <= FLUID_LED_PITCH * 3 &&
+                   FLUID_RENDER_RADIUS * 2 <= FLUID_LED_ROW_PITCH * 3 &&
+                   FLUID_RENDER_WEIGHT_DIVISOR > 0 && FLUID_RENDER_THRESHOLD > 0U &&
+                   FLUID_RENDER_THRESHOLD <= UINT16_MAX,
+               "Render coefficients must fit the 3x3 LED stencil");
+_Static_assert((int64_t)FLUID_PARTICLE_COUNT * FLUID_RENDER_RADIUS * FLUID_RENDER_RADIUS /
+                       FLUID_RENDER_WEIGHT_DIVISOR <=
+                   UINT16_MAX,
+               "Render accumulation exceeds uint16 storage");
 
 /* Conservative cell coverage of the analytic hexagon; outer cells are solid.
  * The pressure boundary is a staircase approximation, separate from collision planes. */
@@ -43,13 +62,13 @@ static int32_t absolute(int32_t value)
 
 static int16_t speed(int32_t value)
 {
-    if (value > MAX_SPEED)
+    if (value > FLUID_MAX_SPEED)
     {
-        value = MAX_SPEED;
+        value = FLUID_MAX_SPEED;
     }
-    if (value < -MAX_SPEED)
+    if (value < -FLUID_MAX_SPEED)
     {
-        value = -MAX_SPEED;
+        value = -FLUID_MAX_SPEED;
     }
     return (int16_t)value;
 }
@@ -65,7 +84,7 @@ bool fluid_sim_contains(int16_t x, int16_t y)
     for (unsigned i = 0U; i < 6U; ++i)
     {
         int32_t dot = (x - FLUID_CENTER) * normals[i][0] + (y - FLUID_CENTER) * normals[i][1];
-        if (dot > (WALL + 4) * UNIT)
+        if (dot > (FLUID_WALL + 4) * FLUID_UNIT)
         {
             return false;
         }
@@ -84,19 +103,20 @@ static void collide_at(fluid_particle_t *p, int32_t x, int32_t y)
         {
             int32_t nx = normals[i][0];
             int32_t ny = normals[i][1];
-            int32_t excess = ((x - FLUID_CENTER) * nx + (y - FLUID_CENTER) * ny) / UNIT - WALL;
+            int32_t excess =
+                ((x - FLUID_CENTER) * nx + (y - FLUID_CENTER) * ny) / FLUID_UNIT - FLUID_WALL;
             if (excess > 0)
             {
                 /* Bias inward by two quantization units at intersecting planes. */
-                x -= (excess + 2) * nx / UNIT;
-                y -= (excess + 2) * ny / UNIT;
+                x -= (excess + 2) * nx / FLUID_UNIT;
+                y -= (excess + 2) * ny / FLUID_UNIT;
                 corrected = true;
             }
-            int32_t outward = (p->vx * nx + p->vy * ny) / UNIT;
+            int32_t outward = (p->vx * nx + p->vy * ny) / FLUID_UNIT;
             if ((excess >= -2) && (outward > 0))
             {
-                p->vx = speed(p->vx - outward * nx / UNIT);
-                p->vy = speed(p->vy - outward * ny / UNIT);
+                p->vx = speed(p->vx - outward * nx / FLUID_UNIT);
+                p->vy = speed(p->vy - outward * ny / FLUID_UNIT);
                 corrected |= outward > 2;
             }
         }
@@ -117,7 +137,7 @@ static void collide(fluid_particle_t *p)
 static void move(fluid_particle_t *p)
 {
     int32_t dx = scale_step(p->vx), dy = scale_step(p->vy);
-    if (absolute(dx) <= 2 * UNIT && absolute(dy) <= 2 * UNIT)
+    if (absolute(dx) <= 2 * FLUID_UNIT && absolute(dy) <= 2 * FLUID_UNIT)
     {
         collide_at(p, p->x + dx, p->y + dy);
         return;
@@ -130,8 +150,9 @@ static void move(fluid_particle_t *p)
     for (unsigned i = 0U; i < 6U; ++i)
     {
         int32_t nx = normals[i][0], ny = normals[i][1];
-        int32_t travel = (dx * nx + dy * ny) / UNIT;
-        int32_t distance = WALL - ((p->x - FLUID_CENTER) * nx + (p->y - FLUID_CENTER) * ny) / UNIT;
+        int32_t travel = (dx * nx + dy * ny) / FLUID_UNIT;
+        int32_t distance =
+            FLUID_WALL - ((p->x - FLUID_CENTER) * nx + (p->y - FLUID_CENTER) * ny) / FLUID_UNIT;
         if (distance < 0)
         {
             distance = 0;
@@ -150,9 +171,9 @@ static void move(fluid_particle_t *p)
     {
         /* The quantized hit may lie just inside the wall; still apply its impulse. */
         int32_t nx = normals[wall][0], ny = normals[wall][1];
-        int32_t outward = (p->vx * nx + p->vy * ny) / UNIT;
-        p->vx = speed(p->vx - outward * nx / UNIT);
-        p->vy = speed(p->vy - outward * ny / UNIT);
+        int32_t outward = (p->vx * nx + p->vy * ny) / FLUID_UNIT;
+        p->vx = speed(p->vx - outward * nx / FLUID_UNIT);
+        p->vy = speed(p->vy - outward * ny / FLUID_UNIT);
     }
     collide_at(p, p->x + dx * fraction / 32768, p->y + dy * fraction / 32768);
 }
@@ -178,10 +199,10 @@ static bool face_liquid(const fluid_sim_t *sim, unsigned face, unsigned axis)
 /* Bilinear weights sum exactly to 256. Positions remain inside the guard cells. */
 static void stencil(int32_t x, int32_t y, unsigned stride, unsigned indices[4], uint16_t weights[4])
 {
-    unsigned ix = (unsigned)(x / UNIT);
-    unsigned iy = (unsigned)(y / UNIT);
-    unsigned fx = (unsigned)(x % UNIT) / 4U;
-    unsigned fy = (unsigned)(y % UNIT) / 4U;
+    unsigned ix = (unsigned)(x / FLUID_UNIT);
+    unsigned iy = (unsigned)(y / FLUID_UNIT);
+    unsigned fx = (unsigned)(x % FLUID_UNIT) / 4U;
+    unsigned fy = (unsigned)(y % FLUID_UNIT) / 4U;
     indices[0] = iy * stride + ix;
     indices[1] = indices[0] + 1U;
     indices[2] = indices[0] + stride;
@@ -198,10 +219,11 @@ void fluid_sim_init(fluid_sim_t *sim)
     unsigned count = 0U;
     unsigned row = 0U;
     /* Twice the area per particle preserves the fill level at half the count. */
-    for (int y = FLUID_CENTER + WALL - 128; y > UNIT && count < FLUID_PARTICLE_COUNT; y -= 690)
+    for (int y = FLUID_CENTER + FLUID_WALL - FLUID_INITIAL_WALL_INSET;
+         y > FLUID_UNIT && count < FLUID_PARTICLE_COUNT; y -= FLUID_INITIAL_ROW_PITCH)
     {
-        for (int x = UNIT + (int)(row % 2U) * 398; x < 12 * UNIT && count < FLUID_PARTICLE_COUNT;
-             x += 796)
+        for (int x = FLUID_UNIT + (int)(row % 2U) * (FLUID_INITIAL_X_PITCH / 2);
+             x < 12 * FLUID_UNIT && count < FLUID_PARTICLE_COUNT; x += FLUID_INITIAL_X_PITCH)
         {
             if (fluid_sim_contains((int16_t)x, (int16_t)y))
             {
@@ -220,8 +242,8 @@ bool fluid_sim_begin(fluid_sim_t *sim, int16_t raw_x, int16_t raw_y)
     }
     /* Specific force has the opposite sign to apparent gravity.
      * Gain is artistic, not a metric length calibration. Scale the impulse with dt. */
-    sim->gravity_x = speed(scale_step(-(int32_t)raw_x / 32));
-    sim->gravity_y = speed(scale_step(-(int32_t)raw_y / 32));
+    sim->gravity_x = speed(scale_step(-(int32_t)raw_x / FLUID_ACCEL_DIVISOR));
+    sim->gravity_y = speed(scale_step(-(int32_t)raw_y / FLUID_ACCEL_DIVISOR));
     sim->phase = FLUID_PHASE_MOVE;
     sim->cursor = 0U;
     sim->iteration = 0U;
@@ -244,14 +266,15 @@ static void separate(fluid_sim_t *sim)
             fluid_particle_t *b = &sim->particles[j];
             int32_t dx = b->x - a->x;
             int32_t dy = b->y - a->y;
-            if ((absolute(dx) >= PARTICLE_DISTANCE) || (absolute(dy) >= PARTICLE_DISTANCE))
+            if ((absolute(dx) >= FLUID_PARTICLE_DISTANCE) ||
+                (absolute(dy) >= FLUID_PARTICLE_DISTANCE))
             {
                 continue;
             }
             /* A max+half-min norm avoids square roots; drift projection also resists packing. */
             int32_t ax = absolute(dx), ay = absolute(dy);
             int32_t distance = ax > ay ? ax + ay / 2 : ay + ax / 2;
-            if (distance >= PARTICLE_DISTANCE)
+            if (distance >= FLUID_PARTICLE_DISTANCE)
             {
                 continue;
             }
@@ -260,7 +283,7 @@ static void separate(fluid_sim_t *sim)
                 dx = 1;
                 distance = 1;
             }
-            int32_t correction = (PARTICLE_DISTANCE - distance) / 2;
+            int32_t correction = (FLUID_PARTICLE_DISTANCE - distance) / 2;
             int32_t sx = divide_small(dx * correction, (unsigned)distance);
             int32_t sy = divide_small(dy * correction, (unsigned)distance);
             a->x = (int16_t)(a->x - sx);
@@ -277,7 +300,7 @@ static void separate(fluid_sim_t *sim)
             collide(&sim->particles[i]);
         }
         sim->cursor = 0U;
-        if (++sim->separation_pass == SEPARATION_PASSES)
+        if (++sim->separation_pass == FLUID_SEPARATION_PASSES)
         {
             sim->phase = FLUID_PHASE_CLEAR;
         }
@@ -294,8 +317,8 @@ static void deposit(fluid_sim_t *sim)
         {
             unsigned indices[4];
             uint16_t weights[4];
-            stencil(p->x - (axis == 1U ? UNIT / 2 : 0), p->y - (axis == 0U ? UNIT / 2 : 0),
-                    FLUID_GRID_STRIDE, indices, weights);
+            stencil(p->x - (axis == 1U ? FLUID_UNIT / 2 : 0),
+                    p->y - (axis == 0U ? FLUID_UNIT / 2 : 0), FLUID_GRID_STRIDE, indices, weights);
             for (unsigned k = 0U; k < 4U; ++k)
             {
                 unsigned face = axis * FLUID_FACE_COUNT + indices[k];
@@ -340,11 +363,12 @@ static void normalize(fluid_sim_t *sim)
     for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
     {
         const fluid_particle_t *p = &sim->particles[i];
-        unsigned cell = (unsigned)(p->y / UNIT) * FLUID_GRID_SIZE + (unsigned)(p->x / UNIT);
+        unsigned cell =
+            (unsigned)(p->y / FLUID_UNIT) * FLUID_GRID_SIZE + (unsigned)(p->x / FLUID_UNIT);
         sim->scratch.cells.type[cell] = FLUID_CELL_LIQUID;
         unsigned indices[4];
         uint16_t weights[4];
-        stencil(p->x - UNIT / 2, p->y - UNIT / 2, FLUID_GRID_SIZE, indices, weights);
+        stencil(p->x - FLUID_UNIT / 2, p->y - FLUID_UNIT / 2, FLUID_GRID_SIZE, indices, weights);
         for (unsigned k = 0U; k < 4U; ++k)
         {
             sim->scratch.cells.density[indices[k]] += weights[k];
@@ -381,9 +405,10 @@ static void project(fluid_sim_t *sim)
             int32_t divergence =
                 sim->grid.velocity.current[faces[1]] - sim->grid.velocity.current[faces[0]] +
                 sim->grid.velocity.current[faces[3]] - sim->grid.velocity.current[faces[2]];
-            if (sim->scratch.cells.density[cell] > REST_DENSITY)
+            if (sim->scratch.cells.density[cell] > FLUID_REST_DENSITY)
             {
-                divergence -= (int32_t)(sim->scratch.cells.density[cell] - REST_DENSITY) / 4;
+                divergence -= (int32_t)(sim->scratch.cells.density[cell] - FLUID_REST_DENSITY) /
+                              FLUID_DENSITY_CORRECTION_DIVISOR;
             }
             int32_t correction = -divergence * inverse[count] / 256;
             for (unsigned k = 0U; k < 4U; ++k)
@@ -414,8 +439,8 @@ static void transfer(fluid_sim_t *sim)
         {
             unsigned indices[4];
             uint16_t weights[4];
-            stencil(p->x - (axis == 1U ? UNIT / 2 : 0), p->y - (axis == 0U ? UNIT / 2 : 0),
-                    FLUID_GRID_STRIDE, indices, weights);
+            stencil(p->x - (axis == 1U ? FLUID_UNIT / 2 : 0),
+                    p->y - (axis == 0U ? FLUID_UNIT / 2 : 0), FLUID_GRID_STRIDE, indices, weights);
             int32_t pic_sum = 0, delta_sum = 0;
             unsigned total = 0U;
             for (unsigned k = 0U; k < 4U; ++k)
@@ -435,8 +460,7 @@ static void transfer(fluid_sim_t *sim)
             {
                 int32_t pic = divide_small(pic_sum, total);
                 int32_t flip = *velocity + divide_small(delta_sum, total);
-                /* Keep ~98% FLIP for lively splashes; a small PIC share limits noise. */
-                *velocity = speed((6 * pic + 250 * flip) / 256);
+                *velocity = speed(((256 - FLUID_FLIP_Q8) * pic + FLUID_FLIP_Q8 * flip) / 256);
             }
         }
         collide(p);
@@ -504,9 +528,9 @@ bool fluid_sim_led_position(unsigned index, int16_t *x, int16_t *y)
     {
         ++row;
     }
-    *x = (int16_t)(FLUID_CENTER + (int)(row_count(row) - 1U) * LED_PITCH / 2 -
-                   (int)(index - row_start[row]) * LED_PITCH);
-    *y = (int16_t)(FLUID_CENTER + (8 - (int)row) * LED_ROW_PITCH);
+    *x = (int16_t)(FLUID_CENTER + (int)(row_count(row) - 1U) * FLUID_LED_PITCH / 2 -
+                   (int)(index - row_start[row]) * FLUID_LED_PITCH);
+    *y = (int16_t)(FLUID_CENTER + (8 - (int)row) * FLUID_LED_ROW_PITCH);
     return true;
 }
 
@@ -520,8 +544,9 @@ bool fluid_sim_render(fluid_sim_t *sim, bool pixels[217])
     for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
     {
         const fluid_particle_t *p = &sim->particles[i];
-        int nearest_row = divide_small(FLUID_CENTER + 8 * LED_ROW_PITCH - p->y + LED_ROW_PITCH / 2,
-                                       LED_ROW_PITCH);
+        int nearest_row =
+            divide_small(FLUID_CENTER + 8 * FLUID_LED_ROW_PITCH - p->y + FLUID_LED_ROW_PITCH / 2,
+                         FLUID_LED_ROW_PITCH);
         for (int row = nearest_row - 1; row <= nearest_row + 1; ++row)
         {
             if (row < 0 || row > 16)
@@ -529,28 +554,29 @@ bool fluid_sim_render(fluid_sim_t *sim, bool pixels[217])
                 continue;
             }
             int count = (int)row_count((unsigned)row);
-            int right_x = FLUID_CENTER + (count - 1) * LED_PITCH / 2;
-            int nearest_column = divide_small(right_x - p->x + LED_PITCH / 2, LED_PITCH);
+            int right_x = FLUID_CENTER + (count - 1) * FLUID_LED_PITCH / 2;
+            int nearest_column =
+                divide_small(right_x - p->x + FLUID_LED_PITCH / 2, FLUID_LED_PITCH);
             for (int col = nearest_column - 1; col <= nearest_column + 1; ++col)
             {
                 if (col < 0 || col >= count)
                 {
                     continue;
                 }
-                int32_t dx = right_x - col * LED_PITCH - p->x;
-                int32_t dy = FLUID_CENTER + (8 - row) * LED_ROW_PITCH - p->y;
-                int32_t kernel = RENDER_RADIUS * RENDER_RADIUS - dx * dx - dy * dy;
+                int32_t dx = right_x - col * FLUID_LED_PITCH - p->x;
+                int32_t dy = FLUID_CENTER + (8 - row) * FLUID_LED_ROW_PITCH - p->y;
+                int32_t kernel = FLUID_RENDER_RADIUS * FLUID_RENDER_RADIUS - dx * dx - dy * dy;
                 if (kernel > 0)
                 {
                     unsigned led = row_start[row] + (unsigned)col;
-                    sim->scratch.render[led] += (uint16_t)(kernel / 2048);
+                    sim->scratch.render[led] += (uint16_t)(kernel / FLUID_RENDER_WEIGHT_DIVISOR);
                 }
             }
         }
     }
     for (unsigned i = 0U; i < 217U; ++i)
     {
-        pixels[i] = sim->scratch.render[i] >= 180U;
+        pixels[i] = sim->scratch.render[i] >= FLUID_RENDER_THRESHOLD;
     }
     return true;
 }

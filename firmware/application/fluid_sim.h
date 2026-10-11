@@ -4,13 +4,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "fluid_config.h"
+
 #define FLUID_GRID_SIZE 13U
 #define FLUID_GRID_STRIDE 14U
 #define FLUID_FACE_COUNT (FLUID_GRID_STRIDE * FLUID_GRID_STRIDE)
-#define FLUID_PARTICLE_COUNT 64U
-#define FLUID_SIM_RATE_HZ 25U
 #define FLUID_CENTER 6656
-#define FLUID_PRESSURE_ITERATIONS 12U
 #define FLUID_CELL_AIR 0U
 #define FLUID_CELL_LIQUID 1U
 #define FLUID_CELL_SOLID 2U

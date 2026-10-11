@@ -3,7 +3,9 @@
 
 #include <stdint.h>
 
-#define FLUID_EFFECT_RATE_HZ 25U
+#include "fluid_config.h"
+
+#define FLUID_EFFECT_RATE_HZ FLUID_SIM_RATE_HZ
 
 typedef struct
 {
