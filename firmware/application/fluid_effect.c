@@ -12,7 +12,8 @@ typedef struct
     fluid_sim_t sim;
     bool pixels[LED_MATRIX_LED_COUNT];
     fluid_effect_stats_t stats;
-    uint32_t handled_ticks;
+    uint32_t handled_us;
+    uint32_t rate_phase;
     uint32_t step_started_us;
     uint32_t work_us;
     int32_t filtered_x;
@@ -23,15 +24,15 @@ typedef struct
 static fluid_effect_t effect;
 
 _Static_assert(sizeof(fluid_effect_t) <= 3840U, "Fluid storage exceeds its RAM budget");
-_Static_assert(IMU_SAMPLE_RATE_HZ == 2U * FLUID_EFFECT_RATE_HZ,
-               "Fluid scheduling requires two IMU ticks per step");
+_Static_assert(FLUID_EFFECT_RATE_HZ == FLUID_SIM_RATE_HZ,
+               "Fluid scheduling and integration must use the same rate");
 
 void fluid_effect_init(void)
 {
     memset(&effect, 0, sizeof(effect));
     fluid_sim_init(&effect.sim);
     effect.pending = fluid_sim_render(&effect.sim, effect.pixels);
-    effect.handled_ticks = imu_platform_ticks();
+    effect.handled_us = imu_platform_time_us();
     effect.stats.state_bytes = (uint16_t)sizeof(effect);
 }
 
@@ -45,11 +46,17 @@ void fluid_effect_poll(void)
     {
         effect.pending = false;
     }
-    uint32_t ticks = imu_platform_ticks();
-    uint32_t periods = (uint32_t)(ticks - effect.handled_ticks) / 2U;
+    uint32_t now_us = imu_platform_time_us();
+    uint32_t elapsed_us = (uint32_t)(now_us - effect.handled_us);
+    effect.handled_us = now_us;
+    /* Carry fractional periods for exact 30Hz despite the 100Hz IMU tick.
+     * Split seconds before multiplying to keep long gaps within uint32. */
+    effect.rate_phase += (elapsed_us % 1000000U) * FLUID_EFFECT_RATE_HZ;
+    uint32_t periods =
+        (elapsed_us / 1000000U) * FLUID_EFFECT_RATE_HZ + effect.rate_phase / 1000000U;
+    effect.rate_phase %= 1000000U;
     if (periods != 0U)
     {
-        effect.handled_ticks += periods * 2U;
         effect.stats.missed_steps += periods - 1U;
         if (healthy && !effect.pending && effect.sim.phase == FLUID_PHASE_IDLE)
         {
@@ -57,7 +64,7 @@ void fluid_effect_poll(void)
             effect.filtered_y += ((int32_t)snapshot.sample.y - effect.filtered_y) / 4;
             (void)fluid_sim_begin(&effect.sim, (int16_t)effect.filtered_x,
                                   (int16_t)effect.filtered_y);
-            effect.step_started_us = imu_platform_time_us();
+            effect.step_started_us = now_us;
             effect.work_us = 0U;
         }
         else

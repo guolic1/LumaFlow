@@ -60,7 +60,7 @@ OTA 仅接受 Application 原始 BIN。Bootloader 自动写入校验元数据；
 
 - LED：217 颗查理复用 LED，每帧 161 个时隙，TIM14 刷新约 100Hz，双缓冲，无灰度。
 - IMU：QMA6100P，I2C 地址 `0x12`，±2g；TIM3 每 10ms 调度主循环读取，不使用 IMU 外部中断。
-- 液体：默认运行 64 粒子、13×13 网格的定点 PIC/FLIP，目标 50Hz；IMU 无效或数据过期时暂停运动。实际计算耗时通过 `fluid` 命令查询。
+- 液体：默认运行 64 粒子、13×13 网格的定点 PIC/FLIP，目标 30Hz；IMU 无效或数据过期时暂停运动。实际计算耗时通过 `fluid` 命令查询。
 - 坐标：LED 位号从右向左、从下向上增加；IMU X 向右、Y 向下。
 
 矩阵使用 PF2，需预先配置 Option Bytes 的 `NRST_MODE=2`，并断开 R5 上拉；固件不自动修改 Option Bytes。Application 使用 PA13/PA14 扫描 LED，运行时不可使用 SWD；Bootloader 保留这两个引脚的调试功能。

@@ -54,6 +54,12 @@ static int16_t speed(int32_t value)
     return (int16_t)value;
 }
 
+/* Velocity keeps its original 20ms reference unit; integrate over 1/rate seconds. */
+static int32_t scale_step(int32_t value)
+{
+    return divide_small(value * 50, FLUID_SIM_RATE_HZ);
+}
+
 bool fluid_sim_contains(int16_t x, int16_t y)
 {
     for (unsigned i = 0U; i < 6U; ++i)
@@ -155,9 +161,9 @@ bool fluid_sim_begin(fluid_sim_t *sim, int16_t raw_x, int16_t raw_y)
         return false;
     }
     /* Specific force has the opposite sign to apparent gravity.
-     * Gain is artistic (cells per 20ms step), not a metric length calibration. */
-    sim->gravity_x = speed(-(int32_t)raw_x / 64);
-    sim->gravity_y = speed(-(int32_t)raw_y / 64);
+     * Gain is artistic, not a metric length calibration. Scale the impulse with dt. */
+    sim->gravity_x = speed(scale_step(-(int32_t)raw_x / 64));
+    sim->gravity_y = speed(scale_step(-(int32_t)raw_y / 64));
     sim->phase = FLUID_PHASE_MOVE;
     sim->cursor = 0U;
     sim->iteration = 0U;
@@ -393,8 +399,8 @@ bool fluid_sim_advance(fluid_sim_t *sim)
             fluid_particle_t *p = &sim->particles[i];
             p->vx = speed(p->vx + sim->gravity_x);
             p->vy = speed(p->vy + sim->gravity_y);
-            p->x = (int16_t)(p->x + p->vx);
-            p->y = (int16_t)(p->y + p->vy);
+            p->x = (int16_t)(p->x + scale_step(p->vx));
+            p->y = (int16_t)(p->y + scale_step(p->vy));
             collide(p);
         }
         sim->phase = FLUID_PHASE_SEPARATE;

@@ -8,6 +8,25 @@
 
 static fluid_sim_t sim;
 
+static void test_step_duration(void)
+{
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 90, -60};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    /* Velocities retain their 20ms reference unit; a 30Hz step spans 5/3 units. */
+    assert(sim.particles[0].x == FLUID_CENTER + 150);
+    assert(sim.particles[0].y == FLUID_CENTER - 100);
+
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 0, 0};
+    assert(fluid_sim_begin(&sim, -4096, 4096));
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].vx == 106 && sim.particles[0].vy == -106);
+    assert(sim.particles[0].x == FLUID_CENTER + 176);
+    assert(sim.particles[0].y == FLUID_CENTER - 176);
+}
+
 static bool open_cell(int x, int y)
 {
     return x > 0 && x < 12 && y > 0 && y < 12 && abs((y - 6) * 1024) <= 5602 &&
@@ -104,6 +123,7 @@ static int32_t divergence(void)
 
 int main(void)
 {
+    test_step_duration();
     test_numeric_tables();
     bool pixels[217];
     int16_t x, y;
