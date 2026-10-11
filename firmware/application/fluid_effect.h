@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define FLUID_EFFECT_RATE_HZ 30U
+#define FLUID_EFFECT_RATE_HZ 25U
 
 typedef struct
 {

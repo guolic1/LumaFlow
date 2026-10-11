@@ -84,13 +84,13 @@ static void finish(unsigned target)
     }
 }
 
-static void test_30hz_cadence(void)
+static void test_25hz_cadence(void)
 {
     reset();
-    /* A non-integer 100Hz tick ratio must still produce exactly 300 steps in 10s. */
-    for (unsigned step = 1U; step <= 300U; ++step)
+    /* Four 100Hz IMU ticks per step produce exactly 250 steps in 10s. */
+    for (unsigned step = 1U; step <= 250U; ++step)
     {
-        uint32_t deadline = (step * 1000000U + 29U) / 30U;
+        uint32_t deadline = step * 40000U;
         at_time(deadline - 1U);
         fluid_effect_poll();
         assert(stats().completed_steps == step - 1U);
@@ -103,38 +103,38 @@ static void test_30hz_cadence(void)
     fluid_effect_stats_t s = stats();
     assert(s.last_work_us > 0U && s.max_work_us >= s.last_work_us);
     assert(s.last_step_us >= s.last_work_us && s.max_slice_us == 7U);
-    assert(s.state_bytes <= 3840U && submissions == 301U);
+    assert(s.state_bytes <= 3840U && submissions == 251U);
 }
 
 static void test_overrun_and_catchup(void)
 {
     reset();
-    at_time(33334U);
+    at_time(40000U);
     fluid_effect_poll(); /* Begin a step, then make it cross the next deadline. */
-    at_time(66667U);
+    at_time(80000U);
     finish(1U);
     assert(stats().missed_steps == 1U);
-    at_time(100000U);
+    at_time(120000U);
     finish(2U);
     assert(stats().missed_steps == 1U);
-    at_time(300000U); /* Six periods elapsed: run only the latest, skip five. */
+    at_time(360000U); /* Six periods elapsed: run only the latest, skip five. */
     finish(3U);
     assert(stats().missed_steps == 6U);
     fluid_effect_poll();
     assert(stats().completed_steps == 3U);
-    at_time(1400000U); /* A gap longer than one second also avoids catch-up bursts. */
+    at_time(1480000U); /* A gap longer than one second also avoids catch-up bursts. */
     finish(4U);
-    assert(stats().missed_steps == 38U);
+    assert(stats().missed_steps == 33U);
 }
 
 static void test_faults_and_backpressure(void)
 {
     reset();
-    at_time(33334U);
+    at_time(40000U);
     fluid_effect_poll();
     bool saved[217];
     memcpy(saved, displayed, sizeof(saved));
-    at_time(66667U);
+    at_time(80000U);
     sample.status = IMU_BUS_ERROR;
     for (unsigned i = 0U; i < 100U; ++i)
     {
@@ -145,27 +145,27 @@ static void test_faults_and_backpressure(void)
     finish(1U);
     memcpy(saved, displayed, sizeof(saved));
 
-    at_time(200000U);
+    at_time(240000U);
     sample.timestamp_ms -= 101U; /* Status OK does not authorize stale data. */
     for (unsigned i = 0U; i < 100U; ++i)
     {
         fluid_effect_poll();
     }
     assert(stats().completed_steps == 1U && memcmp(saved, displayed, sizeof(saved)) == 0);
-    at_time(233334U);
+    at_time(280000U);
     finish(2U);
 
     reset();
     display_accepts = false;
     fluid_effect_init();
-    at_time(33360U);
+    at_time(40040U);
     for (unsigned i = 0U; i < 100U; ++i)
     {
         fluid_effect_poll();
     }
     assert(stats().completed_steps == 0U && stats().missed_steps == 1U);
     display_accepts = true;
-    at_time(66700U);
+    at_time(80040U);
     finish(1U);
     assert(stats().missed_steps == 1U);
 }
@@ -178,7 +178,7 @@ static void test_clock_wraparound(void)
     healthy();
     fluid_effect_init();
     ticks += 4U;
-    microseconds += 33334U;
+    microseconds += 40000U;
     healthy();
     finish(1U);
     fluid_effect_stats_t s = stats();
@@ -187,7 +187,7 @@ static void test_clock_wraparound(void)
 
 int main(void)
 {
-    test_30hz_cadence();
+    test_25hz_cadence();
     test_overrun_and_catchup();
     test_faults_and_backpressure();
     test_clock_wraparound();

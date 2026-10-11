@@ -57,7 +57,7 @@ static int16_t speed(int32_t value)
 /* Velocity keeps its original 20ms reference unit; integrate over 1/rate seconds. */
 static int32_t scale_step(int32_t value)
 {
-    return divide_small(value * 50, FLUID_SIM_RATE_HZ);
+    return value * 50 / (int32_t)FLUID_SIM_RATE_HZ;
 }
 
 bool fluid_sim_contains(int16_t x, int16_t y)

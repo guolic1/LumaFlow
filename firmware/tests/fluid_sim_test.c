@@ -14,17 +14,24 @@ static void test_step_duration(void)
     sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 90, -60};
     assert(fluid_sim_begin(&sim, 0, 0));
     assert(!fluid_sim_advance(&sim));
-    /* Velocities retain their 20ms reference unit; a 30Hz step spans 5/3 units. */
-    assert(sim.particles[0].x == FLUID_CENTER + 150);
-    assert(sim.particles[0].y == FLUID_CENTER - 100);
+    /* Velocities retain their 20ms reference unit; a 25Hz step spans two units. */
+    assert(sim.particles[0].x == FLUID_CENTER + 180);
+    assert(sim.particles[0].y == FLUID_CENTER - 120);
 
     fluid_sim_init(&sim);
     sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 0, 0};
     assert(fluid_sim_begin(&sim, -4096, 4096));
     assert(!fluid_sim_advance(&sim));
-    assert(sim.particles[0].vx == 106 && sim.particles[0].vy == -106);
-    assert(sim.particles[0].x == FLUID_CENTER + 176);
-    assert(sim.particles[0].y == FLUID_CENTER - 176);
+    assert(sim.particles[0].vx == 128 && sim.particles[0].vy == -128);
+    assert(sim.particles[0].x == FLUID_CENTER + 256);
+    assert(sim.particles[0].y == FLUID_CENTER - 256);
+
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 512, -512};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].x == FLUID_CENTER + 1024);
+    assert(sim.particles[0].y == FLUID_CENTER - 1024);
 }
 
 static bool open_cell(int x, int y)
