@@ -29,6 +29,10 @@ _Static_assert(FLUID_VELOCITY_RETAIN_Q8 >= 0 && FLUID_VELOCITY_RETAIN_Q8 <= 256,
                "Velocity retention must be in 0..256");
 _Static_assert(FLUID_WALL_RESTITUTION_Q8 >= 0 && FLUID_WALL_RESTITUTION_Q8 <= 256,
                "Wall restitution must be in 0..256");
+_Static_assert(FLUID_SURFACE_TENSION_Q8 >= 0 && FLUID_SURFACE_TENSION_Q8 <= 32 &&
+                   FLUID_SURFACE_TENSION_RADIUS > FLUID_PARTICLE_DISTANCE &&
+                   FLUID_SURFACE_TENSION_RADIUS <= 2 * FLUID_UNIT,
+               "Cohesion strength or radius exceeds fixed-point bounds");
 _Static_assert(FLUID_INITIAL_X_PITCH > 0 && FLUID_INITIAL_ROW_PITCH > 0 &&
                    FLUID_INITIAL_WALL_INSET >= 0 && FLUID_INITIAL_WALL_INSET < FLUID_WALL,
                "Initial particle spacing and inset must be valid");
@@ -278,8 +282,9 @@ static void separate(fluid_sim_t *sim)
             fluid_particle_t *b = &sim->particles[j];
             int32_t dx = b->x - a->x;
             int32_t dy = b->y - a->y;
-            if ((absolute(dx) >= FLUID_PARTICLE_DISTANCE) ||
-                (absolute(dy) >= FLUID_PARTICLE_DISTANCE))
+            const int radius = FLUID_SURFACE_TENSION_Q8 != 0 ? FLUID_SURFACE_TENSION_RADIUS
+                                                             : FLUID_PARTICLE_DISTANCE;
+            if ((absolute(dx) >= radius) || (absolute(dy) >= radius))
             {
                 continue;
             }
@@ -288,6 +293,27 @@ static void separate(fluid_sim_t *sim)
             int32_t distance = ax > ay ? ax + ay / 2 : ay + ax / 2;
             if (distance >= FLUID_PARTICLE_DISTANCE)
             {
+                if (FLUID_SURFACE_TENSION_Q8 != 0 && sim->separation_pass == 0U &&
+                    distance < FLUID_SURFACE_TENSION_RADIUS)
+                {
+                    /* A short-range attractive envelope fades at both contact and cutoff.
+                     * Equal/opposite impulses approximate cohesion without an extra pair loop.
+                     * Apply only on the first pass so solver iterations do not amplify it. */
+                    int32_t weight = distance - FLUID_PARTICLE_DISTANCE;
+                    int32_t edge = FLUID_SURFACE_TENSION_RADIUS - distance;
+                    if (weight > edge)
+                    {
+                        weight = edge;
+                    }
+                    int32_t sx =
+                        scale_step(dx) * weight * FLUID_SURFACE_TENSION_Q8 / (FLUID_UNIT * 256);
+                    int32_t sy =
+                        scale_step(dy) * weight * FLUID_SURFACE_TENSION_Q8 / (FLUID_UNIT * 256);
+                    a->vx = speed(a->vx + sx);
+                    a->vy = speed(a->vy + sy);
+                    b->vx = speed(b->vx - sx);
+                    b->vy = speed(b->vy - sy);
+                }
                 continue;
             }
             if (distance == 0)

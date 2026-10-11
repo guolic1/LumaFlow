@@ -8,6 +8,59 @@
 
 static fluid_sim_t sim;
 
+static void test_surface_tension(void)
+{
+    const int offsets[][2] = {{1000, 0},   {800, 400},   {-800, 400},
+                              {800, -400}, {-800, -400}, {FLUID_SURFACE_TENSION_RADIUS + 100, 0},
+                              {100, 0}};
+    for (unsigned k = 0U; k < sizeof(offsets) / sizeof(offsets[0]); ++k)
+    {
+        fluid_sim_init(&sim);
+        for (unsigned i = 2U; i < FLUID_PARTICLE_COUNT; ++i)
+        {
+            sim.particles[i] = (fluid_particle_t){FLUID_CENTER, 10500, 0, 0};
+        }
+        int dx = offsets[k][0], dy = offsets[k][1];
+        sim.particles[0] = (fluid_particle_t){FLUID_CENTER - dx / 2, FLUID_CENTER - dy / 2, 0, 0};
+        sim.particles[1] = (fluid_particle_t){FLUID_CENTER + dx / 2, FLUID_CENTER + dy / 2, 0, 0};
+        assert(fluid_sim_begin(&sim, 0, 0));
+        assert(!fluid_sim_advance(&sim));
+        while (sim.phase == FLUID_PHASE_SEPARATE)
+        {
+            assert(!fluid_sim_advance(&sim));
+        }
+        const fluid_particle_t *a = &sim.particles[0], *b = &sim.particles[1];
+        assert(a->vx == -b->vx && a->vy == -b->vy);
+        if (k < 5U)
+        {
+            /* Attraction points toward the neighbor and conserves pair momentum. */
+            assert(a->vx * dx > 0);
+            assert(dy == 0 ? a->vy == 0 : a->vy * dy > 0);
+        }
+        else
+        {
+            /* No long-range attraction or attractive force on an overlapping pair. */
+            assert(a->vx == 0 && a->vy == 0);
+        }
+        if (k == 6U)
+        {
+            assert(b->x - a->x >= FLUID_PARTICLE_DISTANCE - 1);
+        }
+    }
+    /* A resting close pair must visibly approach over complete simulation steps. */
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER - 500, 3584, 0, 0};
+    sim.particles[1] = (fluid_particle_t){FLUID_CENTER + 500, 3584, 0, 0};
+    for (unsigned frame = 0U; frame < 3U; ++frame)
+    {
+        assert(fluid_sim_begin(&sim, 0, 0));
+        while (!fluid_sim_advance(&sim))
+        {
+        }
+    }
+    assert(sim.particles[1].x - sim.particles[0].x < 1000);
+}
+
 static void test_wall_rebound(void)
 {
     fluid_sim_init(&sim);
@@ -368,6 +421,7 @@ static void test_droplet_outline(void)
 
 int main(void)
 {
+    test_surface_tension();
     test_wall_rebound();
     test_velocity_damping();
     test_numeric_tables();

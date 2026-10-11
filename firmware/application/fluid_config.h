@@ -46,6 +46,15 @@
 #define FLUID_REST_DENSITY 512U
 #define FLUID_SEPARATION_PASSES 1U
 
+/* Pairwise cohesion approximates surface tension, without attracting distant drops.
+ * Strength 0 disables it; start with 2..8. Radius uses the max+half-min distance norm. */
+#ifndef FLUID_SURFACE_TENSION_Q8
+#define FLUID_SURFACE_TENSION_Q8 3
+#endif
+#ifndef FLUID_SURFACE_TENSION_RADIUS
+#define FLUID_SURFACE_TENSION_RADIUS 1408
+#endif
+
 /* Render radius is a kernel support, not a collision radius. Smaller thresholds
  * thicken the lit area. Keep radius <= 1.5 times both LED pitches (3x3 stencil). */
 #define FLUID_RENDER_RADIUS 800
