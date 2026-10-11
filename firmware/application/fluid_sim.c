@@ -5,7 +5,7 @@
 
 #define UNIT 1024
 #define WALL 4559
-#define MAX_SPEED 512
+#define MAX_SPEED 768
 #define PARTICLE_DISTANCE 680
 #define REST_DENSITY 512U
 #define LED_PITCH 704
@@ -162,8 +162,8 @@ bool fluid_sim_begin(fluid_sim_t *sim, int16_t raw_x, int16_t raw_y)
     }
     /* Specific force has the opposite sign to apparent gravity.
      * Gain is artistic, not a metric length calibration. Scale the impulse with dt. */
-    sim->gravity_x = speed(scale_step(-(int32_t)raw_x / 64));
-    sim->gravity_y = speed(scale_step(-(int32_t)raw_y / 64));
+    sim->gravity_x = speed(scale_step(-(int32_t)raw_x / 32));
+    sim->gravity_y = speed(scale_step(-(int32_t)raw_y / 32));
     sim->phase = FLUID_PHASE_MOVE;
     sim->cursor = 0U;
     sim->iteration = 0U;
@@ -377,7 +377,8 @@ static void transfer(fluid_sim_t *sim)
             {
                 int32_t pic = divide_small(pic_sum, total);
                 int32_t flip = *velocity + divide_small(delta_sum, total);
-                *velocity = speed((26 * pic + 230 * flip) / 256);
+                /* Keep ~98% FLIP for lively splashes; a small PIC share limits noise. */
+                *velocity = speed((6 * pic + 250 * flip) / 256);
             }
         }
         collide(p);

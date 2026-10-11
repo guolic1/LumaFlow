@@ -22,16 +22,25 @@ static void test_step_duration(void)
     sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 0, 0};
     assert(fluid_sim_begin(&sim, -4096, 4096));
     assert(!fluid_sim_advance(&sim));
-    assert(sim.particles[0].vx == 128 && sim.particles[0].vy == -128);
-    assert(sim.particles[0].x == FLUID_CENTER + 256);
-    assert(sim.particles[0].y == FLUID_CENTER - 256);
+    assert(sim.particles[0].vx == 256 && sim.particles[0].vy == -256);
+    assert(sim.particles[0].x == FLUID_CENTER + 512);
+    assert(sim.particles[0].y == FLUID_CENTER - 512);
 
     fluid_sim_init(&sim);
-    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 512, -512};
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 0, 0};
+    assert(fluid_sim_begin(&sim, -8192, 8191));
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].vx == 512 && sim.particles[0].vy == -510);
+    assert(sim.particles[0].x == FLUID_CENTER + 1024);
+    assert(sim.particles[0].y == FLUID_CENTER - 1020);
+
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 768, -768};
     assert(fluid_sim_begin(&sim, 0, 0));
     assert(!fluid_sim_advance(&sim));
-    assert(sim.particles[0].x == FLUID_CENTER + 1024);
-    assert(sim.particles[0].y == FLUID_CENTER - 1024);
+    assert(sim.particles[0].vx == 768 && sim.particles[0].vy == -768);
+    assert(sim.particles[0].x == FLUID_CENTER + 1536);
+    assert(sim.particles[0].y == FLUID_CENTER - 1536);
 }
 
 static bool open_cell(int x, int y)
@@ -71,6 +80,17 @@ static void test_numeric_tables(void)
             }
         }
     }
+    /* Faster particle velocities also widen FLIP's delta quotient to +/-1536.
+     * Its interpolation weights sum to at most 256, keeping numerators below 2^20. */
+    for (unsigned d = 1U; d <= 256U; ++d)
+    {
+        for (int32_t q = 1025; q <= 1536; ++q)
+        {
+            int32_t value = q * (int32_t)d + (int32_t)d - 1;
+            assert(divide_small(value, d) == value / (int32_t)d);
+            assert(divide_small(-value, d) == -value / (int32_t)d);
+        }
+    }
 }
 
 static void step(int16_t ax, int16_t ay)
@@ -85,7 +105,7 @@ static void step(int16_t ax, int16_t ay)
     {
         const fluid_particle_t *p = &sim.particles[i];
         assert(fluid_sim_contains(p->x, p->y));
-        assert(abs(p->vx) <= 512 && abs(p->vy) <= 512);
+        assert(abs(p->vx) <= 768 && abs(p->vy) <= 768);
     }
 }
 
@@ -128,8 +148,57 @@ static int32_t divergence(void)
     return total;
 }
 
+static void test_ballistic_droplet(void)
+{
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, 3584, 240, -180};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    while (sim.phase != FLUID_PHASE_TRANSFER)
+    {
+        assert(!fluid_sim_advance(&sim));
+    }
+    unsigned cell = (unsigned)(sim.particles[0].y / 1024) * FLUID_GRID_SIZE +
+                    (unsigned)(sim.particles[0].x / 1024);
+    assert(sim.scratch.cells.density[cell] <= 256U);
+    while (!fluid_sim_advance(&sim))
+    {
+    }
+    /* A detached droplet keeps its momentum instead of being damped by grid pressure. */
+    assert(sim.particles[0].vx == 240 && sim.particles[0].vy == -180);
+    assert(sim.particles[0].x == FLUID_CENTER + 480 && sim.particles[0].y == 3224);
+    bool pixels[217];
+    assert(fluid_sim_render(&sim, pixels));
+    int32_t nearest_distance = INT32_MAX;
+    unsigned nearest_led = 0U;
+    for (unsigned led = 0U; led < 217U; ++led)
+    {
+        int16_t x, y;
+        assert(fluid_sim_led_position(led, &x, &y));
+        int32_t dx = x - sim.particles[0].x, dy = y - sim.particles[0].y;
+        int32_t distance = dx * dx + dy * dy;
+        if (distance < nearest_distance)
+        {
+            nearest_distance = distance;
+            nearest_led = led;
+        }
+    }
+    assert(pixels[nearest_led]);
+}
+
+static void test_splash_momentum(void)
+{
+    fluid_sim_init(&sim);
+    /* Two nearby droplets share grid faces, which smooths their opposing velocities. */
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER - 600, 3584, 200, 0};
+    sim.particles[1] = (fluid_particle_t){FLUID_CENTER + 600, 3584, -200, 0};
+    step(0, 0);
+    assert(sim.particles[0].vx >= 150 && sim.particles[1].vx <= -150);
+}
+
 int main(void)
 {
+    test_splash_momentum();
+    test_ballistic_droplet();
     test_step_duration();
     test_numeric_tables();
     bool pixels[217];

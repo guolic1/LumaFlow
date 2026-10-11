@@ -127,7 +127,7 @@ static const uint32_t reciprocal[705] = {
     1497U,   1495U,    1493U,   1491U,   1489U,
 };
 
-/* Callers bound |value| < 2^20, |value/divisor| <= 1024 and divisor in 1..704.
+/* Callers bound |value| < 2^20, |value/divisor| <= 1536 and divisor in 1..704.
  * The product fits uint32; the reciprocal estimate is at most one too small.
  * Correcting the remainder preserves C's exact truncation towards zero. */
 static inline int32_t divide_small(int32_t value, unsigned divisor)
