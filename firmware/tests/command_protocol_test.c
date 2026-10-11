@@ -207,7 +207,7 @@ static void test_application_fluid(void)
     uint8_t response[COMMAND_PROTOCOL_MAX_RAW_FRAME_SIZE];
     static const uint8_t expected[] = {
         4, 3, 2, 1, 0xB0, 4, 0, 0, 0x60, 9, 0,  0,  0xB8, 0x0B, 0,  0,
-        7, 0, 0, 0, 190,  0, 0, 0, 128,  0, 13, 13, 0x42, 0x0E, 50, 0,
+        7, 0, 0, 0, 190,  0, 0, 0, 64,   0, 13, 13, 0x42, 0x0E, 50, 0,
     };
     application_commands_init(&server);
     reset_transport(&application_transport);

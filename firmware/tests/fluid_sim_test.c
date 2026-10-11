@@ -107,7 +107,7 @@ int main(void)
     test_numeric_tables();
     bool pixels[217];
     int16_t x, y;
-    assert(sizeof(sim) <= 3584U);
+    assert(sizeof(sim) <= 3072U);
     assert(fluid_sim_led_position(0U, &x, &y) && x > FLUID_CENTER && y > FLUID_CENTER);
     assert(fluid_sim_led_position(8U, &x, &y) && x < FLUID_CENTER && y > FLUID_CENTER);
     assert(fluid_sim_led_position(108U, &x, &y) && x == FLUID_CENTER && y == FLUID_CENTER);
@@ -218,10 +218,20 @@ int main(void)
             sim.particles[i] = (fluid_particle_t){x, y, 0, 0};
         }
         assert(fluid_sim_render(&sim, pixels));
+        assert(pixels[reference_leds[k]]);
+        unsigned lit_count = 0U;
         for (unsigned i = 0U; i < 217U; ++i)
         {
-            assert(pixels[i] == (i == reference_leds[k]));
+            if (pixels[i])
+            {
+                int16_t led_x, led_y;
+                assert(fluid_sim_led_position(i, &led_x, &led_y));
+                int32_t dx = led_x - x, dy = led_y - y;
+                assert(dx * dx + dy * dy < 900 * 900);
+                ++lit_count;
+            }
         }
+        assert(lit_count <= 7U);
     }
     printf("PIC/FLIP tests passed; state=%zu bytes, particles=%u, grid=%ux%u\n", sizeof(sim),
            FLUID_PARTICLE_COUNT, FLUID_GRID_SIZE, FLUID_GRID_SIZE);

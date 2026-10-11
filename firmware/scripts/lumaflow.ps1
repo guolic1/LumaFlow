@@ -248,7 +248,7 @@ function Get-DeviceFluid($Client, [int]$TimeoutMs = 5000) {
     $particles = [BitConverter]::ToUInt16($data, 24)
     $memory = [BitConverter]::ToUInt16($data, 28)
     $rate = [BitConverter]::ToUInt16($data, 30)
-    if ($work -gt $maximum -or $particles -ne 128 -or $data[26] -ne 13 -or
+    if ($work -gt $maximum -or $particles -eq 0 -or $particles -gt 128 -or $data[26] -ne 13 -or
         $data[27] -ne 13 -or $memory -eq 0 -or $memory -gt 8192 -or $rate -ne 50) {
         throw 'Invalid GET_FLUID response fields.'
     }

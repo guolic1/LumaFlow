@@ -4,12 +4,14 @@
 #include <string.h>
 
 #define UNIT 1024
-#define WALL 4652
+#define WALL 4559
 #define MAX_SPEED 512
-#define PARTICLE_DISTANCE 480
-#define REST_DENSITY 1024U
+#define PARTICLE_DISTANCE 680
+#define REST_DENSITY 512U
 #define LED_PITCH 704
 #define LED_ROW_PITCH 610
+#define RENDER_RADIUS 875
+#define SEPARATION_PASSES 1U
 
 #include "fluid_sim_tables.h"
 
@@ -131,10 +133,11 @@ void fluid_sim_init(fluid_sim_t *sim)
     memset(sim, 0, sizeof(*sim));
     unsigned count = 0U;
     unsigned row = 0U;
-    for (int y = FLUID_CENTER + WALL - 128; y > UNIT && count < FLUID_PARTICLE_COUNT; y -= 488)
+    /* Twice the area per particle preserves the fill level at half the count. */
+    for (int y = FLUID_CENTER + WALL - 128; y > UNIT && count < FLUID_PARTICLE_COUNT; y -= 690)
     {
-        for (int x = UNIT + (int)(row % 2U) * 282; x < 12 * UNIT && count < FLUID_PARTICLE_COUNT;
-             x += 563)
+        for (int x = UNIT + (int)(row % 2U) * 398; x < 12 * UNIT && count < FLUID_PARTICLE_COUNT;
+             x += 796)
         {
             if (fluid_sim_contains((int16_t)x, (int16_t)y))
             {
@@ -210,7 +213,7 @@ static void separate(fluid_sim_t *sim)
             collide(&sim->particles[i]);
         }
         sim->cursor = 0U;
-        if (++sim->separation_pass == 2U)
+        if (++sim->separation_pass == SEPARATION_PASSES)
         {
             sim->phase = FLUID_PHASE_CLEAR;
         }
@@ -316,7 +319,7 @@ static void project(fluid_sim_t *sim)
                 sim->grid.velocity.current[faces[3]] - sim->grid.velocity.current[faces[2]];
             if (sim->scratch.cells.density[cell] > REST_DENSITY)
             {
-                divergence -= (int32_t)(sim->scratch.cells.density[cell] - REST_DENSITY) / 8;
+                divergence -= (int32_t)(sim->scratch.cells.density[cell] - REST_DENSITY) / 4;
             }
             int32_t correction = -divergence * inverse[count] / 256;
             for (unsigned k = 0U; k < 4U; ++k)
@@ -473,11 +476,11 @@ bool fluid_sim_render(fluid_sim_t *sim, bool pixels[217])
                 }
                 int32_t dx = right_x - col * LED_PITCH - p->x;
                 int32_t dy = FLUID_CENTER + (8 - row) * LED_ROW_PITCH - p->y;
-                int32_t kernel = 620 * 620 - dx * dx - dy * dy;
+                int32_t kernel = RENDER_RADIUS * RENDER_RADIUS - dx * dx - dy * dy;
                 if (kernel > 0)
                 {
                     unsigned led = row_start[row] + (unsigned)col;
-                    sim->scratch.render[led] += (uint16_t)(kernel / 1024);
+                    sim->scratch.render[led] += (uint16_t)(kernel / 2048);
                 }
             }
         }

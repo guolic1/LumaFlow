@@ -13,18 +13,26 @@ function New-FluidPayload {
     $data[30] = 50
     return ,$data
 }
+$script:fluidParticles = 64
 $fake = New-FakePort {
     param($p, $r)
     Assert-True ($r.Command -eq 0x31 -and $r.Payload.Length -eq 0) 'Read-only GET_FLUID request'
-    if ($p.Requests.Count -eq 2) { Add-Response $p $r (New-FluidPayload) }
+    if ($p.Requests.Count -eq 2) {
+        $payload = New-FluidPayload
+        $payload[24] = $script:fluidParticles
+        Add-Response $p $r $payload
+    }
 }
 $result = Get-DeviceFluid (New-SerialClient $fake) -TimeoutMs 500
 Assert-True ($result.CompletedSteps -eq [uint32]::MaxValue -and $result.LastWorkUs -eq 1200) 'Unsigned stats and work duration'
 Assert-True ($result.MaxWorkUs -eq 2400 -and $result.LastStepUs -eq 3000 -and $result.MaxSliceUs -eq 190) 'Timing metrics'
 Assert-True ($result.MissedSteps -eq 7 -and $result.StateBytes -eq 3650 -and $result.TargetHz -eq 50) 'Budget and missed steps'
-Assert-True ($result.ParticleCount -eq 128 -and $result.GridWidth -eq 13 -and $result.GridHeight -eq 13) 'Solver dimensions'
+Assert-True ($result.ParticleCount -eq 64 -and $result.GridWidth -eq 13 -and $result.GridHeight -eq 13) 'Solver dimensions'
 Assert-True ($result.WorkBudgetPercent -eq 6 -and $fake.Requests.Count -eq 2) 'Read-only retry and 20ms budget conversion'
-foreach ($invalid in @('length', 'particles', 'width', 'height', 'rate', 'memory', 'timing')) {
+$fake = New-FakePort { param($p, $r) Add-Response $p $r (New-FluidPayload) }
+$legacy = Get-DeviceFluid (New-SerialClient $fake)
+Assert-True ($legacy.ParticleCount -eq 128) 'Legacy 128-particle firmware remains readable'
+foreach ($invalid in @('length', 'particles', 'particle_limit', 'width', 'height', 'rate', 'memory', 'timing')) {
     $script:invalidFluid = $invalid
     $fake = New-FakePort {
         param($p, $r)
@@ -32,6 +40,7 @@ foreach ($invalid in @('length', 'particles', 'width', 'height', 'rate', 'memory
         switch ($script:invalidFluid) {
             'length' { $data = [byte[]]::new(31) }
             'particles' { $data[24] = 0 }
+            'particle_limit' { $data[24] = 129 }
             'width' { $data[26] = 0 }
             'height' { $data[27] = 0 }
             'rate' { $data[30] = 0 }
