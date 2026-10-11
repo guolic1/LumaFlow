@@ -25,6 +25,12 @@
 #define FLUID_INPUT_FILTER_Q8 128
 #endif
 
+/* Velocity retained each simulation step: 256 disables drag, 0 stops old motion.
+ * Drag applies before the new acceleration impulse. */
+#ifndef FLUID_VELOCITY_RETAIN_Q8
+#define FLUID_VELOCITY_RETAIN_Q8 252
+#endif
+
 /* Larger FLIP share preserves more inertia. Density correction divisor works inversely. */
 #ifndef FLUID_FLIP_Q8
 #define FLUID_FLIP_Q8 250

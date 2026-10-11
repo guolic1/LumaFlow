@@ -25,6 +25,8 @@ _Static_assert(FLUID_PRESSURE_ITERATIONS > 0U && FLUID_PRESSURE_ITERATIONS <= UI
 _Static_assert(FLUID_ACCEL_DIVISOR > 0 && FLUID_FLIP_Q8 >= 0 && FLUID_FLIP_Q8 <= 256 &&
                    FLUID_DENSITY_CORRECTION_DIVISOR > 0 && FLUID_REST_DENSITY <= UINT16_MAX,
                "Force and pressure coefficients are out of range");
+_Static_assert(FLUID_VELOCITY_RETAIN_Q8 >= 0 && FLUID_VELOCITY_RETAIN_Q8 <= 256,
+               "Velocity retention must be in 0..256");
 _Static_assert(FLUID_INITIAL_X_PITCH > 0 && FLUID_INITIAL_ROW_PITCH > 0 &&
                    FLUID_INITIAL_WALL_INSET >= 0 && FLUID_INITIAL_WALL_INSET < FLUID_WALL,
                "Initial particle spacing and inset must be valid");
@@ -480,8 +482,8 @@ bool fluid_sim_advance(fluid_sim_t *sim)
         for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
         {
             fluid_particle_t *p = &sim->particles[i];
-            p->vx = speed(p->vx + sim->gravity_x);
-            p->vy = speed(p->vy + sim->gravity_y);
+            p->vx = speed(p->vx * FLUID_VELOCITY_RETAIN_Q8 / 256 + sim->gravity_x);
+            p->vy = speed(p->vy * FLUID_VELOCITY_RETAIN_Q8 / 256 + sim->gravity_y);
             move(p);
         }
         sim->phase = FLUID_PHASE_SEPARATE;

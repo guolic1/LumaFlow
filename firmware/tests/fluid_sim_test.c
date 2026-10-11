@@ -8,13 +8,28 @@
 
 static fluid_sim_t sim;
 
+static void test_velocity_damping(void)
+{
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 1024, -512};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].vx == 1008 && sim.particles[0].vy == -504);
+    assert(sim.particles[0].x == FLUID_CENTER + 2016);
+    assert(sim.particles[0].y == FLUID_CENTER - 1008);
+    /* Once per physical step, not once per cooperative slice or separation pass. */
+    int16_t vx = sim.particles[0].vx, vy = sim.particles[0].vy;
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].vx == vx && sim.particles[0].vy == vy);
+}
+
 static void test_high_speed_motion(void)
 {
     fluid_sim_init(&sim);
     sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 2000, 0};
     assert(fluid_sim_begin(&sim, 0, 0));
     assert(!fluid_sim_advance(&sim));
-    assert(sim.particles[0].vx == 2000 && sim.particles[0].x == FLUID_CENTER + 4000);
+    assert(sim.particles[0].vx == 1968 && sim.particles[0].x == FLUID_CENTER + 3936);
     /* Exercise all travel directions from interior and near-wall positions. */
     for (int y = 2200; y <= 11100; y += 445)
     {
@@ -64,14 +79,14 @@ static void test_high_speed_motion(void)
     assert(!fluid_sim_advance(&sim));
     assert(sim.particles[0].x > FLUID_CENTER + 4000);
     assert(fluid_sim_contains(sim.particles[0].x, sim.particles[0].y));
-    /* The new cap also applies when the next acceleration impulse exceeds it. */
+    /* Out-of-range initial velocities are clamped, with or without an extra impulse. */
     fluid_sim_init(&sim);
-    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 16384, 0};
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, INT16_MAX, 0};
     assert(fluid_sim_begin(&sim, -8192, 0));
     assert(!fluid_sim_advance(&sim));
     fluid_particle_t accelerated = sim.particles[0];
     fluid_sim_init(&sim);
-    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 16384, 0};
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, INT16_MAX, 0};
     assert(fluid_sim_begin(&sim, 0, 0));
     assert(!fluid_sim_advance(&sim));
     assert(memcmp(&accelerated, &sim.particles[0], sizeof(accelerated)) == 0);
@@ -113,8 +128,8 @@ static void test_step_duration(void)
     assert(fluid_sim_begin(&sim, 0, 0));
     assert(!fluid_sim_advance(&sim));
     /* Velocities retain their 20ms reference unit; a 25Hz step spans two units. */
-    assert(sim.particles[0].x == FLUID_CENTER + 180);
-    assert(sim.particles[0].y == FLUID_CENTER - 120);
+    assert(sim.particles[0].x == FLUID_CENTER + 176);
+    assert(sim.particles[0].y == FLUID_CENTER - 118);
 
     fluid_sim_init(&sim);
     sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 0, 0};
@@ -136,9 +151,9 @@ static void test_step_duration(void)
     sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 768, -768};
     assert(fluid_sim_begin(&sim, 0, 0));
     assert(!fluid_sim_advance(&sim));
-    assert(sim.particles[0].vx == 768 && sim.particles[0].vy == -768);
-    assert(sim.particles[0].x == FLUID_CENTER + 1536);
-    assert(sim.particles[0].y == FLUID_CENTER - 1536);
+    assert(sim.particles[0].vx == 756 && sim.particles[0].vy == -756);
+    assert(sim.particles[0].x == FLUID_CENTER + 1512);
+    assert(sim.particles[0].y == FLUID_CENTER - 1512);
 }
 
 static bool open_cell(int x, int y)
@@ -272,9 +287,9 @@ static void test_ballistic_droplet(void)
     while (!fluid_sim_advance(&sim))
     {
     }
-    /* A detached droplet keeps its momentum instead of being damped by grid pressure. */
-    assert(sim.particles[0].vx == 240 && sim.particles[0].vy == -180);
-    assert(sim.particles[0].x == FLUID_CENTER + 480 && sim.particles[0].y == 3224);
+    /* Grid pressure preserves a detached droplet's momentum after explicit drag. */
+    assert(sim.particles[0].vx == 236 && sim.particles[0].vy == -177);
+    assert(sim.particles[0].x == FLUID_CENTER + 472 && sim.particles[0].y == 3230);
     bool pixels[217];
     assert(fluid_sim_render(&sim, pixels));
     int32_t nearest_distance = INT32_MAX;
@@ -320,6 +335,7 @@ static void test_droplet_outline(void)
 
 int main(void)
 {
+    test_velocity_damping();
     test_numeric_tables();
     test_high_speed_motion();
     test_high_speed_transfer();
