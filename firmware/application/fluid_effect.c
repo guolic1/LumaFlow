@@ -17,6 +17,11 @@ typedef struct
     uint32_t work_us;
     int32_t filtered_x;
     int32_t filtered_y;
+    int32_t input_sum_x;
+    int32_t input_sum_y;
+    uint32_t input_samples;
+    uint32_t input_sequence;
+    bool input_valid;
     bool pending;
 } fluid_effect_t;
 
@@ -29,6 +34,42 @@ _Static_assert(IMU_SAMPLE_RATE_HZ % FLUID_EFFECT_RATE_HZ == 0U,
                "Fluid scheduling requires an integer number of IMU ticks per step");
 
 #define IMU_TICKS_PER_STEP (IMU_SAMPLE_RATE_HZ / FLUID_EFFECT_RATE_HZ)
+
+static void sample_input(const imu_snapshot_t *snapshot, bool healthy)
+{
+    if (!healthy)
+    {
+        effect.input_valid = false;
+        effect.input_samples = 0U;
+        effect.input_sum_x = 0;
+        effect.input_sum_y = 0;
+        return;
+    }
+    if (effect.input_valid && snapshot->sequence == effect.input_sequence)
+    {
+        return;
+    }
+    if (!effect.input_valid)
+    {
+        effect.filtered_x = snapshot->sample.x;
+        effect.filtered_y = snapshot->sample.y;
+    }
+    else
+    {
+        /* Filter at the 100Hz sample rate, not the 25Hz physics rate. */
+        effect.filtered_x += ((int32_t)snapshot->sample.x - effect.filtered_x) / 2;
+        effect.filtered_y += ((int32_t)snapshot->sample.y - effect.filtered_y) / 2;
+    }
+    effect.input_sequence = snapshot->sequence;
+    effect.input_valid = true;
+    /* A delayed scheduler must not allow unbounded sums. Normal windows have four samples. */
+    if (effect.input_samples < IMU_SAMPLE_RATE_HZ)
+    {
+        effect.input_sum_x += effect.filtered_x;
+        effect.input_sum_y += effect.filtered_y;
+        ++effect.input_samples;
+    }
+}
 
 void fluid_effect_init(void)
 {
@@ -45,6 +86,7 @@ void fluid_effect_poll(void)
     imu_get_snapshot(&snapshot);
     bool healthy = snapshot.ready && snapshot.valid && snapshot.status == IMU_OK &&
                    (uint32_t)(imu_platform_time_ms() - snapshot.timestamp_ms) <= 100U;
+    sample_input(&snapshot, healthy);
     if (effect.pending && led_matrix_submit(effect.pixels))
     {
         effect.pending = false;
@@ -58,10 +100,15 @@ void fluid_effect_poll(void)
         effect.stats.missed_steps += periods - 1U;
         if (healthy && !effect.pending && effect.sim.phase == FLUID_PHASE_IDLE)
         {
-            effect.filtered_x += ((int32_t)snapshot.sample.x - effect.filtered_x) / 4;
-            effect.filtered_y += ((int32_t)snapshot.sample.y - effect.filtered_y) / 4;
-            (void)fluid_sim_begin(&effect.sim, (int16_t)effect.filtered_x,
-                                  (int16_t)effect.filtered_y);
+            /* Average the force over this window so short shakes contribute an impulse
+             * without multiplying it by the number of IMU samples. */
+            int32_t input_x = effect.input_samples != 0U
+                                  ? effect.input_sum_x / (int32_t)effect.input_samples
+                                  : effect.filtered_x;
+            int32_t input_y = effect.input_samples != 0U
+                                  ? effect.input_sum_y / (int32_t)effect.input_samples
+                                  : effect.filtered_y;
+            (void)fluid_sim_begin(&effect.sim, (int16_t)input_x, (int16_t)input_y);
             effect.step_started_us = imu_platform_time_us();
             effect.work_us = 0U;
         }
@@ -69,6 +116,10 @@ void fluid_effect_poll(void)
         {
             ++effect.stats.missed_steps;
         }
+        /* Discard an expired window even when busy; never replay stale shake forces. */
+        effect.input_sum_x = 0;
+        effect.input_sum_y = 0;
+        effect.input_samples = 0U;
     }
     if (!healthy || effect.pending || effect.sim.phase == FLUID_PHASE_IDLE)
     {

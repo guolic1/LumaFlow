@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "fluid_effect.h"
+#include "fluid_sim.h"
 #include "imu.h"
 #include "imu_platform.h"
 #include "led_matrix.h"
@@ -185,8 +186,73 @@ static void test_clock_wraparound(void)
     assert(s.missed_steps == 0U && s.last_step_us < 10000U && s.max_slice_us == 7U);
 }
 
+static void shake_frame(int16_t impulse, unsigned polls, bool invalid, bool output[217])
+{
+    at_time(0U);
+    sample.sample.x = 0;
+    sample.sample.y = 0;
+    sample.sequence = 1U;
+    display_accepts = true;
+    fluid_effect_init();
+    fluid_effect_poll();
+    for (unsigned tick = 1U; tick <= 4U; ++tick)
+    {
+        at_time(tick * 10000U);
+        sample.sample.x = tick == 1U ? impulse : 0;
+        sample.sample.y = 0;
+        sample.sequence = tick + 1U;
+        if (invalid && tick == 1U)
+        {
+            sample.status = IMU_BUS_ERROR;
+        }
+        for (unsigned poll = 0U; poll < polls; ++poll)
+        {
+            fluid_effect_poll();
+        }
+    }
+    finish(1U);
+    memcpy(output, displayed, sizeof(displayed));
+}
+
+static int32_t lit_center_x(const bool pixels[217])
+{
+    int32_t sum = 0;
+    unsigned count = 0U;
+    for (unsigned led = 0U; led < 217U; ++led)
+    {
+        if (pixels[led])
+        {
+            int16_t x, y;
+            assert(fluid_sim_led_position(led, &x, &y));
+            sum += x;
+            ++count;
+        }
+    }
+    assert(count != 0U);
+    return sum / (int32_t)count;
+}
+
+static void test_short_shake(void)
+{
+    bool baseline[217], left[217], right[217], repeated[217], invalid[217];
+    shake_frame(0, 1U, false, baseline);
+    shake_frame(8191, 1U, false, left);
+    shake_frame(-8192, 1U, false, right);
+    /* A 10ms pulse ending before the 40ms simulation deadline must move the LEDs. */
+    assert(memcmp(left, baseline, sizeof(left)) != 0);
+    assert(memcmp(right, baseline, sizeof(right)) != 0);
+    assert(memcmp(left, right, sizeof(left)) != 0);
+    assert(lit_center_x(left) < lit_center_x(baseline));
+    assert(lit_center_x(right) > lit_center_x(baseline));
+    shake_frame(-8192, 20U, false, repeated);
+    assert(memcmp(right, repeated, sizeof(right)) == 0); /* Process each sample once. */
+    shake_frame(-8192, 1U, true, invalid);
+    assert(memcmp(baseline, invalid, sizeof(baseline)) == 0);
+}
+
 int main(void)
 {
+    test_short_shake();
     test_25hz_cadence();
     test_overrun_and_catchup();
     test_faults_and_backpressure();
