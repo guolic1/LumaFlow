@@ -127,12 +127,15 @@ static const uint32_t reciprocal[705] = {
     1497U,   1495U,    1493U,   1491U,   1489U,
 };
 
-/* Callers bound |value| < 2^20, |value/divisor| <= 1536 and divisor in 1..704.
- * The product fits uint32; the reciprocal estimate is at most one too small.
- * Correcting the remainder preserves C's exact truncation towards zero. */
+/* Divisors are in 1..704. Small inputs use a uint32 reciprocal product whose
+ * estimate is at most one too small. Larger velocity sums require full division. */
 static inline int32_t divide_small(int32_t value, unsigned divisor)
 {
-    uint32_t magnitude = (uint32_t)(value < 0 ? -value : value);
+    uint32_t magnitude = value < 0 ? 0U - (uint32_t)value : (uint32_t)value;
+    if (magnitude >= (1U << 20U) || magnitude / 4096U >= divisor)
+    {
+        return value / (int32_t)divisor;
+    }
     uint32_t quotient = (magnitude * reciprocal[divisor]) >> 20U;
     quotient += magnitude - quotient * divisor >= divisor;
     return value < 0 ? -(int32_t)quotient : (int32_t)quotient;

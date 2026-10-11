@@ -91,6 +91,17 @@ static void test_numeric_tables(void)
             assert(divide_small(-value, d) == -value / (int32_t)d);
         }
     }
+    /* PIC and FLIP interpolation now reach 16384 and 32768 respectively. */
+    const int32_t quotients[] = {1536, 4095, 4096, 16384, 32768};
+    for (unsigned d = 1U; d <= 256U; ++d)
+    {
+        for (unsigned i = 0U; i < sizeof(quotients) / sizeof(quotients[0]); ++i)
+        {
+            int32_t value = quotients[i] * (int32_t)d + (int32_t)d - 1;
+            assert(divide_small(value, d) == value / (int32_t)d);
+            assert(divide_small(-value, d) == -value / (int32_t)d);
+        }
+    }
 }
 
 static void step(int16_t ax, int16_t ay)
