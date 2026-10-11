@@ -11,6 +11,8 @@
 #define LED_PITCH 704
 #define LED_ROW_PITCH 610
 
+#include "fluid_sim_tables.h"
+
 _Static_assert(FLUID_PARTICLE_COUNT <= UINT8_MAX && FLUID_PARTICLE_COUNT % 16U == 0U,
                "Particle batches must fit the bounded cursor");
 _Static_assert(FLUID_GRID_STRIDE == FLUID_GRID_SIZE + 1U, "MAC face guard stride mismatch");
@@ -95,24 +97,16 @@ static bool solid(int x, int y)
            !open_cells[y * FLUID_GRID_SIZE + x];
 }
 
-static bool liquid(const fluid_sim_t *sim, int x, int y)
-{
-    return !solid(x, y) && sim->scratch.cells.type[y * FLUID_GRID_SIZE + x] == FLUID_CELL_LIQUID;
-}
-
 static bool face_open(unsigned face, unsigned axis)
 {
-    int x = (int)(face % FLUID_GRID_STRIDE);
-    int y = (int)(face / FLUID_GRID_STRIDE);
-    return axis == 0U ? (!solid(x - 1, y) && !solid(x, y)) : (!solid(x, y - 1) && !solid(x, y));
+    return face_cells[axis * FLUID_FACE_COUNT + face][0] != 0U;
 }
 
 static bool face_liquid(const fluid_sim_t *sim, unsigned face, unsigned axis)
 {
-    int x = (int)(face % FLUID_GRID_STRIDE);
-    int y = (int)(face / FLUID_GRID_STRIDE);
-    return axis == 0U ? (liquid(sim, x - 1, y) || liquid(sim, x, y))
-                      : (liquid(sim, x, y - 1) || liquid(sim, x, y));
+    const uint8_t *cells = face_cells[axis * FLUID_FACE_COUNT + face];
+    return sim->scratch.cells.type[cells[0]] == FLUID_CELL_LIQUID ||
+           sim->scratch.cells.type[cells[1]] == FLUID_CELL_LIQUID;
 }
 
 /* Bilinear weights sum exactly to 256. Positions remain inside the guard cells. */
@@ -200,8 +194,8 @@ static void separate(fluid_sim_t *sim)
                 distance = 1;
             }
             int32_t correction = (PARTICLE_DISTANCE - distance) / 2;
-            int32_t sx = dx * correction / distance;
-            int32_t sy = dy * correction / distance;
+            int32_t sx = divide_small(dx * correction, (unsigned)distance);
+            int32_t sy = divide_small(dy * correction, (unsigned)distance);
             a->x = (int16_t)(a->x - sx);
             a->y = (int16_t)(a->y - sy);
             b->x = (int16_t)(b->x + sx);
@@ -372,8 +366,8 @@ static void transfer(fluid_sim_t *sim)
             int16_t *velocity = axis == 0U ? &p->vx : &p->vy;
             if (total != 0U)
             {
-                int32_t pic = pic_sum / (int32_t)total;
-                int32_t flip = *velocity + delta_sum / (int32_t)total;
+                int32_t pic = divide_small(pic_sum, total);
+                int32_t flip = *velocity + divide_small(delta_sum, total);
                 *velocity = speed((26 * pic + 230 * flip) / 256);
             }
         }
@@ -460,8 +454,8 @@ bool fluid_sim_render(fluid_sim_t *sim, bool pixels[217])
     for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
     {
         const fluid_particle_t *p = &sim->particles[i];
-        int nearest_row =
-            (FLUID_CENTER + 8 * LED_ROW_PITCH - p->y + LED_ROW_PITCH / 2) / LED_ROW_PITCH;
+        int nearest_row = divide_small(FLUID_CENTER + 8 * LED_ROW_PITCH - p->y + LED_ROW_PITCH / 2,
+                                       LED_ROW_PITCH);
         for (int row = nearest_row - 1; row <= nearest_row + 1; ++row)
         {
             if (row < 0 || row > 16)
@@ -470,7 +464,7 @@ bool fluid_sim_render(fluid_sim_t *sim, bool pixels[217])
             }
             int count = (int)row_count((unsigned)row);
             int right_x = FLUID_CENTER + (count - 1) * LED_PITCH / 2;
-            int nearest_column = (right_x - p->x + LED_PITCH / 2) / LED_PITCH;
+            int nearest_column = divide_small(right_x - p->x + LED_PITCH / 2, LED_PITCH);
             for (int col = nearest_column - 1; col <= nearest_column + 1; ++col)
             {
                 if (col < 0 || col >= count)

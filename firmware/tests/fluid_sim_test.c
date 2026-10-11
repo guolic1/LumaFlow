@@ -4,8 +4,48 @@
 #include <string.h>
 
 #include "fluid_sim.h"
+#include "fluid_sim_tables.h"
 
 static fluid_sim_t sim;
+
+static bool open_cell(int x, int y)
+{
+    return x > 0 && x < 12 && y > 0 && y < 12 && abs((y - 6) * 1024) <= 5602 &&
+           887 * abs((x - 6) * 1024) + 512 * abs((y - 6) * 1024) <= 5602 * 1024;
+}
+
+static void test_numeric_tables(void)
+{
+    for (unsigned axis = 0U; axis < 2U; ++axis)
+    {
+        for (int y = 0; y < 14; ++y)
+        {
+            for (int x = 0; x < 14; ++x)
+            {
+                int ax = x - (axis == 0U), ay = y - (axis == 1U);
+                const uint8_t *cells = face_cells[axis * FLUID_FACE_COUNT + y * 14 + x];
+                bool open = open_cell(ax, ay) && open_cell(x, y);
+                assert(cells[0] == (open ? ay * 13 + ax : 0));
+                assert(cells[1] == (open ? y * 13 + x : 0));
+            }
+        }
+    }
+    /* Quotient boundaries, large remainders and both signs across the caller range. */
+    for (unsigned d = 1U; d <= 704U; ++d)
+    {
+        for (int32_t q = 0; q <= 1024; ++q)
+        {
+            int32_t values[] = {q * (int32_t)d, q * (int32_t)d - 1,
+                                q * (int32_t)d + (int32_t)d - 1};
+            for (unsigned k = 0U; k < 3U; ++k)
+            {
+                int32_t value = values[k];
+                assert(divide_small(value, d) == value / (int32_t)d);
+                assert(divide_small(-value, d) == -value / (int32_t)d);
+            }
+        }
+    }
+}
 
 static void step(int16_t ax, int16_t ay)
 {
@@ -64,6 +104,7 @@ static int32_t divergence(void)
 
 int main(void)
 {
+    test_numeric_tables();
     bool pixels[217];
     int16_t x, y;
     assert(sizeof(sim) <= 3584U);

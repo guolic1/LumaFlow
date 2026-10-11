@@ -24,6 +24,9 @@ int main(void)
     LL_SYSCFG_EnablePinRemap(LL_SYSCFG_PIN_RMP_PA12);
 
     SystemClock_Config();
+    /* Keep the existing two Flash wait states; accelerate instruction fetch at 64MHz. */
+    LL_FLASH_EnablePrefetch();
+    LL_FLASH_EnableInstCache();
 
     MX_DMA_Init();
     MX_ADC1_Init();

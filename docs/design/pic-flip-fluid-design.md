@@ -49,6 +49,14 @@ foundation-first：先证明核心投影、边界、映射、持续稳定性，�
 
 [Matthias Müller：How to write a FLIP Water Simulator](https://matthias-research.github.io/pages/tenMinutePhysics/18-flip.pdf)，用于算法事实；独立实现，不复制演示代码。
 
+[ST RM0444 §3.3.5](https://www.st.com/resource/en/reference_manual/rm0444-stm32g0x1-advanced-armbased-32bit-mcus-stmicroelectronics.pdf) 说明 Flash 预取及指令缓存；Application 在原有 64MHz 时钟/两等待周期配置后显式启用，不改 Bootloader 的时钟或擦写流程。
+
+## 实测性能问题与优化
+
+用户板测：128 粒子配置 LastWorkUs=89129、LastStepUs=98746、MaxWorkUs=92010、MissedSteps=2587，实际约 10Hz。50Hz 只是原目标，不能视为已经达到。ARM 指令级分析的固定向右重力输入，在第 61 步观测到约 146 万条核心指令、9298 次软件除法；不模拟中断、Flash 等待和真实周期。
+
+将 MAC 面的相邻单元存为 Flash 常量表，避免反复除以 14；粒子分离、速度回传及 LED 坐标的有界除法使用 Q20 倒数表和一次余数修正，保持 C 的向零取整。表只读，不增加 RAM；测试检查全部面映射以及除数 1..704、商 0..1024 的正负边界。1200 步差分验证中，每个阶段的粒子状态和每帧 LED 输出与旧版相同。该输入的软件除法降至 82 次。仅求解核心的 Release 改用 -O2，其他文件保持 -Os；实际收益必须板测。
+
 ## 软件验证记录
 
 主机 CTest 7/7 与 GCC `-O2` ASan/UBSan 7/7 通过；核心覆盖双向 X/Y 重力、投影降低散度、长期变向、重叠粒子分离和位号渲染。调度测试覆盖周期、背压、故障、过期、恢复和 tick/微秒回绕。PowerShell 5.1 的 7 项脚本测试，以及 PowerShell 7 的 fluid/imu 测试通过。
