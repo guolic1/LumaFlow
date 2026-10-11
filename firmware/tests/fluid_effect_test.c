@@ -250,8 +250,79 @@ static void test_short_shake(void)
     assert(memcmp(baseline, invalid, sizeof(baseline)) == 0);
 }
 
+static bool has_detached_droplet(void)
+{
+    bool visited[217] = {false};
+    int16_t x[217], y[217];
+    for (unsigned led = 0U; led < 217U; ++led)
+    {
+        assert(fluid_sim_led_position(led, &x[led], &y[led]));
+    }
+    bool small = false, body = false;
+    for (unsigned led = 0U; led < 217U; ++led)
+    {
+        if (!displayed[led] || visited[led])
+        {
+            continue;
+        }
+        uint16_t queue[217];
+        unsigned head = 0U, count = 1U;
+        queue[0] = (uint16_t)led;
+        visited[led] = true;
+        while (head < count)
+        {
+            unsigned current = queue[head++];
+            for (unsigned neighbor = 0U; neighbor < 217U; ++neighbor)
+            {
+                int32_t dx = x[current] - x[neighbor], dy = y[current] - y[neighbor];
+                if (displayed[neighbor] && !visited[neighbor] && dx * dx + dy * dy < 715 * 715)
+                {
+                    visited[neighbor] = true;
+                    queue[count++] = (uint16_t)neighbor;
+                }
+            }
+        }
+        small |= count <= 5U;
+        body |= count >= 10U;
+    }
+    return small && body;
+}
+
+static void test_visible_splash(void)
+{
+    at_time(0U);
+    sample.sample.x = 0;
+    sample.sample.y = -4096;
+    display_accepts = true;
+    fluid_effect_init();
+    bool detached = false;
+    /* Settle, shake for one second, then let the fluid fall back down. */
+    for (unsigned tick = 0U; tick <= 300U; ++tick)
+    {
+        at_time(tick * 10000U);
+        sample.sample.x = 0;
+        sample.sample.y = -4096;
+        sample.sequence = tick + 1U;
+        if (tick >= 100U && tick < 200U)
+        {
+            sample.sample.x = (int16_t)((int32_t)(tick * 1723U % 16384U) - 8192);
+            sample.sample.y = (int16_t)((int32_t)(tick * 3527U % 16384U) - 8192);
+        }
+        for (unsigned poll = 0U; poll < 60U; ++poll)
+        {
+            fluid_effect_poll();
+        }
+        if (tick >= 100U && tick % 4U == 0U)
+        {
+            detached |= has_detached_droplet();
+        }
+    }
+    assert(detached && stats().completed_steps == 75U && stats().missed_steps == 0U);
+}
+
 int main(void)
 {
+    test_visible_splash();
     test_short_shake();
     test_25hz_cadence();
     test_overrun_and_catchup();

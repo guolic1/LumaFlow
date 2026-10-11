@@ -10,7 +10,7 @@
 #define REST_DENSITY 512U
 #define LED_PITCH 704
 #define LED_ROW_PITCH 610
-#define RENDER_RADIUS 875
+#define RENDER_RADIUS 800
 #define SEPARATION_PASSES 1U
 
 #include "fluid_sim_tables.h"
@@ -494,7 +494,7 @@ bool fluid_sim_render(fluid_sim_t *sim, bool pixels[217])
     }
     for (unsigned i = 0U; i < 217U; ++i)
     {
-        pixels[i] = sim->scratch.render[i] >= 160U;
+        pixels[i] = sim->scratch.render[i] >= 180U;
     }
     return true;
 }

@@ -195,8 +195,23 @@ static void test_splash_momentum(void)
     assert(sim.particles[0].vx >= 150 && sim.particles[1].vx <= -150);
 }
 
+static void test_droplet_outline(void)
+{
+    fluid_sim_init(&sim);
+    for (unsigned i = 1U; i < FLUID_PARTICLE_COUNT; ++i)
+    {
+        sim.particles[i] = (fluid_particle_t){FLUID_CENTER, 10500, 0, 0};
+    }
+    /* A droplet between two LEDs lights them without bridging to the next row. */
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER + 352, FLUID_CENTER, 0, 0};
+    bool pixels[217];
+    assert(fluid_sim_render(&sim, pixels));
+    assert(pixels[107] && pixels[108] && !pixels[124]);
+}
+
 int main(void)
 {
+    test_droplet_outline();
     test_splash_momentum();
     test_ballistic_droplet();
     test_step_duration();
