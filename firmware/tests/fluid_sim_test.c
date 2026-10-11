@@ -8,6 +8,104 @@
 
 static fluid_sim_t sim;
 
+static void test_high_speed_motion(void)
+{
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 2000, 0};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].vx == 2000 && sim.particles[0].x == FLUID_CENTER + 4000);
+    /* Exercise all travel directions from interior and near-wall positions. */
+    for (int y = 2200; y <= 11100; y += 445)
+    {
+        for (int x = 1500; x <= 11800; x += 515)
+        {
+            if (!fluid_sim_contains((int16_t)x, (int16_t)y))
+            {
+                continue;
+            }
+            for (int vx = -16384; vx <= 16384; vx += 4096)
+            {
+                fluid_sim_init(&sim);
+                for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
+                {
+                    int vy = -16384 + (int)(i % 9U) * 4096;
+                    sim.particles[i] =
+                        (fluid_particle_t){(int16_t)x, (int16_t)y, (int16_t)vx, (int16_t)vy};
+                }
+                assert(fluid_sim_begin(&sim, 0, 0));
+                assert(!fluid_sim_advance(&sim));
+                for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
+                {
+                    assert(fluid_sim_contains(sim.particles[i].x, sim.particles[i].y));
+                    static const int normals[6][2] = {
+                        {0, 1024}, {0, -1024}, {887, 512}, {887, -512}, {-887, 512}, {-887, -512},
+                    };
+                    const fluid_particle_t *p = &sim.particles[i];
+                    for (unsigned wall = 0U; wall < 6U; ++wall)
+                    {
+                        int nx = normals[wall][0], ny = normals[wall][1];
+                        int distance =
+                            4559 - ((p->x - FLUID_CENTER) * nx + (p->y - FLUID_CENTER) * ny) / 1024;
+                        if (distance <= 2)
+                        {
+                            /* Quantized contact must remove outward velocity, avoiding stalls. */
+                            assert((p->vx * nx + p->vy * ny) / 1024 <= 3);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    /* A large positive displacement must hit the right wall, never wrap to the left. */
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 16384, 0};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    assert(sim.particles[0].x > FLUID_CENTER + 4000);
+    assert(fluid_sim_contains(sim.particles[0].x, sim.particles[0].y));
+    /* The new cap also applies when the next acceleration impulse exceeds it. */
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 16384, 0};
+    assert(fluid_sim_begin(&sim, -8192, 0));
+    assert(!fluid_sim_advance(&sim));
+    fluid_particle_t accelerated = sim.particles[0];
+    fluid_sim_init(&sim);
+    sim.particles[0] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER, 16384, 0};
+    assert(fluid_sim_begin(&sim, 0, 0));
+    assert(!fluid_sim_advance(&sim));
+    assert(memcmp(&accelerated, &sim.particles[0], sizeof(accelerated)) == 0);
+}
+
+static void test_high_speed_transfer(void)
+{
+    for (int sign = -1; sign <= 1; sign += 2)
+    {
+        fluid_sim_init(&sim);
+        for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
+        {
+            sim.particles[i] = (fluid_particle_t){FLUID_CENTER, FLUID_CENTER,
+                                                  (int16_t)(sign * 16384), (int16_t)(sign * 16384)};
+        }
+        memset(sim.scratch.cells.type, FLUID_CELL_LIQUID, sizeof(sim.scratch.cells.type));
+        for (unsigned i = 0U; i < 2U * FLUID_FACE_COUNT; ++i)
+        {
+            sim.grid.velocity.current[i] = (int16_t)(sign * 16384);
+            sim.grid.velocity.previous[i] = (int16_t)(-sign * 16384);
+        }
+        sim.phase = FLUID_PHASE_TRANSFER;
+        while (!fluid_sim_advance(&sim))
+        {
+        }
+        /* Maximum grid deltas must retain their sign and clamp after FLIP blending. */
+        for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
+        {
+            assert(sim.particles[i].vx == sign * 16384);
+            assert(sim.particles[i].vy == sign * 16384);
+        }
+    }
+}
+
 static void test_step_duration(void)
 {
     fluid_sim_init(&sim);
@@ -116,7 +214,7 @@ static void step(int16_t ax, int16_t ay)
     {
         const fluid_particle_t *p = &sim.particles[i];
         assert(fluid_sim_contains(p->x, p->y));
-        assert(abs(p->vx) <= 768 && abs(p->vy) <= 768);
+        assert(abs(p->vx) <= 16384 && abs(p->vy) <= 16384);
     }
 }
 
@@ -222,11 +320,13 @@ static void test_droplet_outline(void)
 
 int main(void)
 {
+    test_numeric_tables();
+    test_high_speed_motion();
+    test_high_speed_transfer();
     test_droplet_outline();
     test_splash_momentum();
     test_ballistic_droplet();
     test_step_duration();
-    test_numeric_tables();
     bool pixels[217];
     int16_t x, y;
     assert(sizeof(sim) <= 3072U);
@@ -319,6 +419,18 @@ int main(void)
             {-8192, 8191}, {8191, -8192}, {0, 4096}, {4096, 0}, {0, -4096}, {-4096, 0},
         };
         step(gravity[(i / 50U) % 6U][0], gravity[(i / 50U) % 6U][1]);
+        assert(fluid_sim_render(&sim, pixels));
+    }
+    /* Run the complete pipeline with speeds at both limits, including rendering. */
+    fluid_sim_init(&sim);
+    for (unsigned i = 0U; i < FLUID_PARTICLE_COUNT; ++i)
+    {
+        sim.particles[i].vx = i % 2U ? 16384 : -16384;
+        sim.particles[i].vy = i % 4U < 2U ? 16384 : -16384;
+    }
+    for (unsigned i = 0U; i < 100U; ++i)
+    {
+        step(i % 2U ? 8191 : -8192, i % 4U < 2U ? 8191 : -8192);
         assert(fluid_sim_render(&sim, pixels));
     }
     /* A packed cluster exercises separation and the largest transfer accumulators. */

@@ -5,7 +5,7 @@
 
 #define UNIT 1024
 #define WALL 4559
-#define MAX_SPEED 768
+#define MAX_SPEED 16384
 #define PARTICLE_DISTANCE 680
 #define REST_DENSITY 512U
 #define LED_PITCH 704
@@ -73,30 +73,88 @@ bool fluid_sim_contains(int16_t x, int16_t y)
     return true;
 }
 
-static void collide(fluid_particle_t *p)
+static void collide_at(fluid_particle_t *p, int32_t x, int32_t y)
 {
-    for (unsigned pass = 0U; pass < 2U; ++pass)
+    /* Axis speed clamps can reintroduce a small outward component on sloped walls.
+     * Continue only when needed, with a fixed bound for cooperative scheduling. */
+    for (unsigned pass = 0U; pass < 8U; ++pass)
     {
+        bool corrected = false;
         for (unsigned i = 0U; i < 6U; ++i)
         {
             int32_t nx = normals[i][0];
             int32_t ny = normals[i][1];
-            int32_t excess =
-                ((p->x - FLUID_CENTER) * nx + (p->y - FLUID_CENTER) * ny) / UNIT - WALL;
+            int32_t excess = ((x - FLUID_CENTER) * nx + (y - FLUID_CENTER) * ny) / UNIT - WALL;
             if (excess > 0)
             {
                 /* Bias inward by two quantization units at intersecting planes. */
-                p->x = (int16_t)(p->x - (excess + 2) * nx / UNIT);
-                p->y = (int16_t)(p->y - (excess + 2) * ny / UNIT);
+                x -= (excess + 2) * nx / UNIT;
+                y -= (excess + 2) * ny / UNIT;
+                corrected = true;
             }
             int32_t outward = (p->vx * nx + p->vy * ny) / UNIT;
             if ((excess >= -2) && (outward > 0))
             {
                 p->vx = speed(p->vx - outward * nx / UNIT);
                 p->vy = speed(p->vy - outward * ny / UNIT);
+                corrected |= outward > 2;
+            }
+        }
+        if (pass >= 1U && !corrected)
+        {
+            break;
+        }
+    }
+    p->x = (int16_t)x;
+    p->y = (int16_t)y;
+}
+
+static void collide(fluid_particle_t *p)
+{
+    collide_at(p, p->x, p->y);
+}
+
+static void move(fluid_particle_t *p)
+{
+    int32_t dx = scale_step(p->vx), dy = scale_step(p->vy);
+    if (absolute(dx) <= 2 * UNIT && absolute(dy) <= 2 * UNIT)
+    {
+        collide_at(p, p->x + dx, p->y + dy);
+        return;
+    }
+    /* Stop fast motion at the first wall rather than projecting a huge overshoot
+     * across the hexagon. Tangential motion resumes on the next simulation step.
+     * Q15 time keeps products in int32, even at the maximum displacement. */
+    int32_t fraction = 32768;
+    unsigned wall = 6U;
+    for (unsigned i = 0U; i < 6U; ++i)
+    {
+        int32_t nx = normals[i][0], ny = normals[i][1];
+        int32_t travel = (dx * nx + dy * ny) / UNIT;
+        int32_t distance = WALL - ((p->x - FLUID_CENTER) * nx + (p->y - FLUID_CENTER) * ny) / UNIT;
+        if (distance < 0)
+        {
+            distance = 0;
+        }
+        if (travel > distance)
+        {
+            int32_t hit = distance * 32768 / travel;
+            if (hit < fraction)
+            {
+                fraction = hit;
+                wall = i;
             }
         }
     }
+    if (wall < 6U)
+    {
+        /* The quantized hit may lie just inside the wall; still apply its impulse. */
+        int32_t nx = normals[wall][0], ny = normals[wall][1];
+        int32_t outward = (p->vx * nx + p->vy * ny) / UNIT;
+        p->vx = speed(p->vx - outward * nx / UNIT);
+        p->vy = speed(p->vy - outward * ny / UNIT);
+    }
+    collide_at(p, p->x + dx * fraction / 32768, p->y + dy * fraction / 32768);
 }
 
 static bool solid(int x, int y)
@@ -400,9 +458,7 @@ bool fluid_sim_advance(fluid_sim_t *sim)
             fluid_particle_t *p = &sim->particles[i];
             p->vx = speed(p->vx + sim->gravity_x);
             p->vy = speed(p->vy + sim->gravity_y);
-            p->x = (int16_t)(p->x + scale_step(p->vx));
-            p->y = (int16_t)(p->y + scale_step(p->vy));
-            collide(p);
+            move(p);
         }
         sim->phase = FLUID_PHASE_SEPARATE;
         break;
