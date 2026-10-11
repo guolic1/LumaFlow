@@ -40,6 +40,14 @@ $fake = New-FakePort {
 }
 $result = Get-DeviceFluid (New-SerialClient $fake)
 Assert-True ($result.TargetHz -eq 30 -and $result.WorkBudgetPercent -eq 3.6) '30Hz firmware budget conversion'
+$fake = New-FakePort {
+    param($p, $r)
+    $data = New-FluidPayload
+    $data[24] = 64; $data[30] = 25
+    Add-Response $p $r $data
+}
+$result = Get-DeviceFluid (New-SerialClient $fake)
+Assert-True ($result.TargetHz -eq 25 -and $result.WorkBudgetPercent -eq 3) '25Hz firmware budget conversion'
 foreach ($invalid in @('length', 'particles', 'particle_limit', 'width', 'height', 'rate', 'memory', 'timing')) {
     $script:invalidFluid = $invalid
     $fake = New-FakePort {

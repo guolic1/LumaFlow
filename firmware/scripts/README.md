@@ -125,7 +125,7 @@ PIC/FLIP 固件启动后默认运行液体效果。查询实际负载：
 powershell -NoProfile -File scripts/lumaflow.ps1 -Command fluid -Port COM9
 ```
 
-`CompletedSteps` 是已完成模拟步数；`LastWorkUs` / `MaxWorkUs` 是各计算片段及渲染耗时之和，包含抢占中断；`MaxSliceUs` 是最长单片段。`LastStepUs` 包含段间 IMU/串口和故障暂停，属于墙钟耗时。`WorkBudgetPercent` 为 LastWorkUs 占目标周期的百分比，按设备返回的 `TargetHz` 计算（30Hz 约 33.33ms），不能直接当作纯 CPU 使用率。`MissedSteps` 表示因计算忙、显示背压、IMU 无效等未启动的模拟周期。`StateBytes` 是效果全部静态状态（含输出缓冲），`TargetHz` 仅表示目标频率；脚本兼容 30Hz 和旧版 50Hz 固件。
+`CompletedSteps` 是已完成模拟步数；`LastWorkUs` / `MaxWorkUs` 是各计算片段及渲染耗时之和，包含抢占中断；`MaxSliceUs` 是最长单片段。`LastStepUs` 包含段间 IMU/串口和故障暂停，属于墙钟耗时。`WorkBudgetPercent` 为 LastWorkUs 占目标周期的百分比，按设备返回的 `TargetHz` 计算（25Hz 为 40ms），不能直接当作纯 CPU 使用率。`MissedSteps` 表示因计算忙、显示背压、IMU 无效等未启动的模拟周期。`StateBytes` 是效果全部静态状态（含输出缓冲），`TargetHz` 仅表示目标频率；脚本兼容 25Hz、30Hz 和旧版 50Hz 固件。
 
 先确认 IMU 健康，再连续查询：正常应看到步骤持续增加、MissedSteps 不持续增加。LastStepUs 超过 `1000000 / TargetHz` µs 说明该步未在一个目标周期内完成；同时用 `imu.ps1` 检查 missed_ticks。旧固件或 Bootloader 不支持 0x31，会明确返回 BAD_COMMAND。只读查询允许静默重试。
 
