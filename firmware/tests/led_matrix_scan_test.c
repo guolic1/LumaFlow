@@ -2,7 +2,34 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "led_matrix_gpio.h"
 #include "led_matrix_scan.h"
+
+static void test_gpio_mapping(void)
+{
+    /* MCU pin numbers independently checked against the schematic. */
+    static const unsigned ports[18] = {0, 0, 0, 0, 0, 0, 1, 1, 0, 2, 0, 0, 0, 1, 1, 1, 3, 1};
+    static const unsigned pins[18] = {2, 3, 4, 5, 6, 7, 0, 1, 8, 6, 13, 14, 15, 3, 4, 5, 2, 8};
+    for (uint32_t ios = 0U; ios < (1UL << 18U); ++ios)
+    {
+        uint32_t levels[LED_MATRIX_GPIO_PORT_COUNT] = {0U};
+        uint32_t modes[LED_MATRIX_GPIO_PORT_COUNT] = {0U};
+        for (unsigned io = 0U; io < 18U; ++io)
+        {
+            if ((ios & (1UL << io)) != 0U)
+            {
+                levels[ports[io]] |= 1UL << pins[io];
+                modes[ports[io]] |= 1UL << (pins[io] * 2U);
+            }
+        }
+        led_matrix_gpio_mask_t actual = led_matrix_gpio_mask(ios);
+        for (unsigned port = 0U; port < LED_MATRIX_GPIO_PORT_COUNT; ++port)
+        {
+            assert(actual.levels[port] == levels[port]);
+            assert(actual.modes[port] == modes[port]);
+        }
+    }
+}
 
 /* Independent topology rule checked against the KiCad netlist: cathodes IO0..16,
  * anodes IO0..17, with this diagonal band. D numbers increase by cathode/anode. */
@@ -132,6 +159,7 @@ static void test_frame_boundary_and_copy(void)
 
 int main(void)
 {
+    test_gpio_mapping();
     test_coverage_and_individual_pixels();
     test_frame_boundary_and_copy();
     return 0;

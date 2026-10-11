@@ -1,12 +1,13 @@
 #include "led_matrix.h"
 
+#include "led_matrix_gpio.h"
 #include "led_matrix_scan.h"
 #include "main.h"
 
 #define LED_MATRIX_TIMER_CLOCK_HZ 64000000UL
 #define LED_MATRIX_TIMER_TICKS 3975U
 #define LED_MATRIX_GPIO_COUNT 18U
-#define LED_MATRIX_PORT_COUNT 4U
+#define LED_MATRIX_PORT_COUNT LED_MATRIX_GPIO_PORT_COUNT
 
 typedef struct
 {
@@ -35,25 +36,8 @@ static void matrix_release(void)
 
 static void matrix_drive(led_matrix_drive_t drive)
 {
-    uint32_t high[LED_MATRIX_PORT_COUNT] = {0U};
-    uint32_t low[LED_MATRIX_PORT_COUNT] = {0U};
-    uint32_t high_modes[LED_MATRIX_PORT_COUNT] = {0U};
-    uint32_t low_modes[LED_MATRIX_PORT_COUNT] = {0U};
-
-    for (unsigned int index = 0U; index < LED_MATRIX_GPIO_COUNT; ++index)
-    {
-        const matrix_pin_t *pin = &pins[index];
-        if ((drive.high & (1UL << index)) != 0U)
-        {
-            high[pin->port] |= 1UL << pin->pin;
-            high_modes[pin->port] |= 1UL << (pin->pin * 2U);
-        }
-        if ((drive.low & (1UL << index)) != 0U)
-        {
-            low[pin->port] |= 1UL << pin->pin;
-            low_modes[pin->port] |= 1UL << (pin->pin * 2U);
-        }
-    }
+    led_matrix_gpio_mask_t high = led_matrix_gpio_mask(drive.high);
+    led_matrix_gpio_mask_t low = led_matrix_gpio_mask(drive.low);
 
     /* Prepare the next group before blanking to keep the dead time short.
      * Preload levels while every matrix pin is high impedance, then enable
@@ -61,15 +45,15 @@ static void matrix_drive(led_matrix_drive_t drive)
     matrix_release();
     for (unsigned int port = 0U; port < LED_MATRIX_PORT_COUNT; ++port)
     {
-        ports[port]->BSRR = high[port] | (low[port] << 16U);
+        ports[port]->BSRR = high.levels[port] | (low.levels[port] << 16U);
     }
     for (unsigned int port = 0U; port < LED_MATRIX_PORT_COUNT; ++port)
     {
-        ports[port]->MODER |= low_modes[port];
+        ports[port]->MODER |= low.modes[port];
     }
     for (unsigned int port = 0U; port < LED_MATRIX_PORT_COUNT; ++port)
     {
-        ports[port]->MODER |= high_modes[port];
+        ports[port]->MODER |= high.modes[port];
     }
 }
 
