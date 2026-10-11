@@ -452,5 +452,11 @@ led_matrix_drive_t led_matrix_scan_next(led_matrix_scan_t *scan)
     {
         scan->slot = 0U;
     }
+    /* IO17/PB8 is an anode only (D117, D133..D217 along the upper-left edge).
+     * Discharge it when unused; no LED cathode connects to this extra sink. */
+    if ((drive.high & (1UL << 17U)) == 0U)
+    {
+        drive.low |= 1UL << 17U;
+    }
     return drive;
 }

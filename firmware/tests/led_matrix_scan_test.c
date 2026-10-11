@@ -26,6 +26,8 @@ static unsigned int check_frame(led_matrix_scan_t *scan, const bool expected[LED
 
         assert((drive.high & drive.low) == 0U);
         assert(((drive.high | drive.low) >> 18U) == 0U);
+        /* IO17 has only outgoing LEDs. Never leave their shared anode floating. */
+        assert(((drive.high | drive.low) & (1UL << 17U)) != 0U);
         for (unsigned int pin = 0U; pin < 18U; ++pin)
         {
             high_count += (drive.high >> pin) & 1U;
@@ -43,10 +45,11 @@ static unsigned int check_frame(led_matrix_scan_t *scan, const bool expected[LED
             }
             if ((drive.low & (1UL << pin)) != 0U)
             {
-                assert(sources == 1U);
+                assert(sources == (pin == 17U ? 0U : 1U));
             }
         }
-        assert(high_count == low_count && high_count <= 2U);
+        assert(low_count == high_count + ((drive.high & (1UL << 17U)) == 0U));
+        assert(high_count <= 2U);
         for (unsigned int cathode = 0U; cathode < 17U; ++cathode)
         {
             for (unsigned int anode = 0U; anode < 18U; ++anode)
@@ -106,7 +109,7 @@ static void test_frame_boundary_and_copy(void)
 
     led_matrix_scan_init(&scan);
     led_matrix_drive_t first = led_matrix_scan_next(&scan);
-    assert(first.high == 0U && first.low == 0U);
+    assert(first.high == 0U && first.low == (1UL << 17U));
     pixels[0] = true;
     expected[0] = true;
     assert(led_matrix_scan_submit(&scan, pixels));
@@ -115,7 +118,7 @@ static void test_frame_boundary_and_copy(void)
     for (unsigned int slot = 1U; slot < LED_MATRIX_SLOT_COUNT; ++slot)
     {
         led_matrix_drive_t drive = led_matrix_scan_next(&scan);
-        assert(drive.high == 0U && drive.low == 0U);
+        assert(drive.high == 0U && drive.low == (1UL << 17U));
     }
     assert(check_frame(&scan, expected) == 0U);
     assert(led_matrix_scan_submit(&scan, pixels));

@@ -20,6 +20,7 @@ typedef struct
 typedef struct
 {
     uint32_t high;
+    /* Includes IO17's discharge clamp whenever IO17 is not a source. */
     uint32_t low;
 } led_matrix_drive_t;
 
