@@ -8,7 +8,70 @@
 #define REG_BW 0x10U
 #define REG_PM 0x11U
 #define REG_INT_CFG 0x21U
+#define REG_NVM 0x33U
 #define REG_RESET 0x36U
+#define REG_CHIP_STATE 0x45U
+#define REG_TST0_ANA 0x4AU
+#define REG_AFE_ANA 0x56U
+#define REG_TST1_ANA 0x5FU
+
+static qma6100p_status_t startup(qma6100p_t *device)
+{
+    /* QST Rev. E section 6.3. Bound both waits so a bad IMU cannot block the app. */
+    for (unsigned reset_attempt = 0U; reset_attempt < 3U; ++reset_attempt)
+    {
+        if (!device->bus.write(REG_RESET, 0xB6U))
+        {
+            return QMA6100P_BUS_ERROR;
+        }
+        device->bus.delay_ms(1U);
+        if (!device->bus.write(REG_RESET, 0U))
+        {
+            return QMA6100P_BUS_ERROR;
+        }
+        bool loaded = false;
+        for (unsigned poll = 0U; poll < 10U; ++poll)
+        {
+            uint8_t nvm;
+            if (!device->bus.read(REG_NVM, &nvm, 1U))
+            {
+                return QMA6100P_BUS_ERROR;
+            }
+            if ((nvm & 0x05U) == 0x05U)
+            {
+                loaded = true;
+                break;
+            }
+            device->bus.delay_ms(1U);
+        }
+        if (!loaded)
+        {
+            return QMA6100P_CONFIG_ERROR;
+        }
+        uint8_t state;
+        if (!device->bus.read(REG_CHIP_STATE, &state, 1U))
+        {
+            return QMA6100P_BUS_ERROR;
+        }
+        if ((state & 0xF0U) == 0xC0U)
+        {
+            static const uint8_t sequence[][2] = {
+                {REG_PM, 0x80U},      {REG_PM, 0x84U},       {REG_TST0_ANA, 0x20U},
+                {REG_AFE_ANA, 0x01U}, {REG_TST1_ANA, 0x80U},
+            };
+            for (unsigned i = 0U; i < sizeof(sequence) / sizeof(sequence[0]); ++i)
+            {
+                if (!device->bus.write(sequence[i][0], sequence[i][1]))
+                {
+                    return QMA6100P_BUS_ERROR;
+                }
+            }
+            device->bus.delay_ms(1U);
+            return device->bus.write(REG_TST1_ANA, 0U) ? QMA6100P_OK : QMA6100P_BUS_ERROR;
+        }
+    }
+    return QMA6100P_CONFIG_ERROR;
+}
 
 static qma6100p_status_t update(qma6100p_t *device, uint8_t reg, uint8_t mask, uint8_t value)
 {
@@ -46,17 +109,11 @@ qma6100p_status_t qma6100p_init(qma6100p_t *device, qma6100p_bus_t bus)
     {
         return QMA6100P_CHIP_ID_ERROR;
     }
-    if (!bus.write(REG_RESET, 0xB6U))
+    status = startup(device);
+    if (status != QMA6100P_OK)
     {
-        return QMA6100P_BUS_ERROR;
+        return status;
     }
-    /* The supplied preliminary manual gives no reset-completion flag. */
-    bus.delay_ms(10U);
-    if (!bus.write(REG_RESET, 0U))
-    {
-        return QMA6100P_BUS_ERROR;
-    }
-    bus.delay_ms(10U);
 
     static const struct
     {
@@ -64,7 +121,6 @@ qma6100p_status_t qma6100p_init(qma6100p_t *device, qma6100p_bus_t bus)
         uint8_t mask;
         uint8_t value;
     } settings[] = {
-        {REG_PM, 0x80U, 0U},
         {REG_RANGE, 0x0FU, 0x01U},
         /* MCLK=51.2kHz (4), ODR=100Hz (0): see recorded RIOT clock evidence. */
         {REG_BW, 0x1FU, 0U},

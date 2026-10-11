@@ -5,7 +5,7 @@
 #include "imu.h"
 #include "imu_platform.h"
 
-static uint8_t registers[64];
+static uint8_t registers[256];
 static uint32_t ticks;
 static unsigned reads;
 static bool bus_ok;
@@ -60,6 +60,8 @@ int main(void)
 {
     imu_snapshot_t snapshot;
     registers[0] = 0x90U;
+    registers[0x33] = 0x05U;
+    registers[0x45] = 0xC0U;
     registers[1] = 1U;
     registers[2] = 0x40U; /* +1g */
     registers[3] = 1U;
