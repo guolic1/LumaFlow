@@ -1,11 +1,17 @@
 #ifndef MOTION_SLEEP_CONFIG_H
 #define MOTION_SLEEP_CONFIG_H
 
+#include "imu.h"
+
 #define MOTION_SLEEP_IDLE_MS 30000U
-/* +/-2g IMU raw units: 4096 = 1g. Compare each axis against the last motion
- * reference, not zero: a stationary board still measures gravity in any orientation. */
-#define MOTION_SLEEP_QUIET_THRESHOLD_RAW 410 /* ceil(0.1g * 4096); below this is quiet */
-#define MOTION_SLEEP_WAKE_THRESHOLD_RAW 2048 /* 0.5g; at or above this wakes the device */
+/* Thresholds in mg; round up to native counts (103 and 512 at +/-8g).
+ * Compare each axis against the last motion reference, not zero/gravity. */
+#define MOTION_SLEEP_QUIET_THRESHOLD_MG 100U
+#define MOTION_SLEEP_WAKE_THRESHOLD_MG 500U
+#define MOTION_SLEEP_QUIET_THRESHOLD_RAW                                                           \
+    ((MOTION_SLEEP_QUIET_THRESHOLD_MG * IMU_COUNTS_PER_G + 999U) / 1000U)
+#define MOTION_SLEEP_WAKE_THRESHOLD_RAW                                                            \
+    ((MOTION_SLEEP_WAKE_THRESHOLD_MG * IMU_COUNTS_PER_G + 999U) / 1000U)
 #define MOTION_SLEEP_MAX_SAMPLE_GAP_MS 100U
 
 #endif

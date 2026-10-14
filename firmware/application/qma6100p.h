@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define QMA6100P_RANGE_G 8U
+#define QMA6100P_COUNTS_PER_G (8192U / QMA6100P_RANGE_G)
+
 typedef enum
 {
     QMA6100P_OK = 0,
@@ -33,7 +36,8 @@ typedef struct
     uint8_t new_data;
 } qma6100p_sample_t;
 
-/* Fixed configuration: address is selected by the bus, +/-2g, nominal 100Hz. */
+/* Fixed configuration: address is selected by the bus, +/-8g, nominal 100Hz.
+ * Samples retain native signed 14-bit counts (1024 LSB/g), not normalized units. */
 qma6100p_status_t qma6100p_init(qma6100p_t *device, qma6100p_bus_t bus);
 qma6100p_status_t qma6100p_read(qma6100p_t *device, qma6100p_sample_t *sample);
 

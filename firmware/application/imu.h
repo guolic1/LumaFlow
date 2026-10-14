@@ -4,7 +4,8 @@
 #include "qma6100p.h"
 
 #define IMU_SAMPLE_RATE_HZ 100U
-#define IMU_RANGE_G 2U
+#define IMU_RANGE_G QMA6100P_RANGE_G
+#define IMU_COUNTS_PER_G QMA6100P_COUNTS_PER_G
 
 typedef enum
 {

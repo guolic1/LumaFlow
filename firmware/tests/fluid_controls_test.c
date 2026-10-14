@@ -152,7 +152,7 @@ static void test_filter_control(void)
     {
         sample.sequence = ticks + 1U;
         sample.timestamp_ms = imu_platform_time_ms();
-        sample.sample.x = -8192;
+        sample.sample.x = -2 * (int16_t)IMU_COUNTS_PER_G;
         for (unsigned poll = 0U; poll < 60U; ++poll)
         {
             fluid_effect_poll();
@@ -161,8 +161,8 @@ static void test_filter_control(void)
     fluid_effect_stats_t stats;
     fluid_effect_get_stats(&stats);
     assert(stats.completed_steps == 1U && stats.missed_steps == 0U);
-    /* With no filter response all inputs remain zero. With instant response the
-     * five-sample first window averages (0 - 4*8192)/5, truncating towards zero. */
+    /* With no filter response all inputs remain zero. The -2g pulse normalizes
+     * to -8192 solver units; its five-sample window averages (0 - 4*8192)/5. */
     fluid_sim_init(&sim);
     assert(fluid_sim_begin(&sim, FLUID_INPUT_FILTER_Q8 == 0 ? 0 : -6553, 0));
     while (!fluid_sim_advance(&sim))

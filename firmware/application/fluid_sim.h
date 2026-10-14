@@ -10,6 +10,7 @@
 #define FLUID_GRID_STRIDE 14U
 #define FLUID_FACE_COUNT (FLUID_GRID_STRIDE * FLUID_GRID_STRIDE)
 #define FLUID_CENTER 6656
+#define FLUID_INPUT_COUNTS_PER_G 4096
 #define FLUID_CELL_AIR 0U
 #define FLUID_CELL_LIQUID 1U
 #define FLUID_CELL_SOLID 2U
@@ -64,6 +65,7 @@ typedef struct
 } fluid_sim_t;
 
 void fluid_sim_init(fluid_sim_t *sim);
+/* Force inputs use FLUID_INPUT_COUNTS_PER_G units per g, independent of IMU range. */
 bool fluid_sim_begin(fluid_sim_t *sim, int16_t raw_x, int16_t raw_y);
 /* One bounded slice; true only when an active step just completed. */
 bool fluid_sim_advance(fluid_sim_t *sim);

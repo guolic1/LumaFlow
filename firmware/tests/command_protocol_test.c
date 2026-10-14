@@ -231,7 +231,7 @@ static void test_application_imu(void)
     uint8_t response[COMMAND_PROTOCOL_MAX_RAW_FRAME_SIZE];
     static const uint8_t expected[] = {
         4, 3, 2, 1, 0x40, 0x30, 0x20, 0x10, 0, 0xE0, 0xFF, 0x1F, 0,   0xF0,
-        5, 3, 2, 0, 0,    0,    3,    0,    0, 0,    0,    2,    100, 0,
+        5, 3, 2, 0, 0,    0,    3,    0,    0, 0,    0,    8,    100, 0,
     };
     imu_snapshot = (imu_snapshot_t){
         .sample = {-8192, 8191, -4096, 5U},

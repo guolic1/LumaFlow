@@ -63,7 +63,7 @@ int main(void)
     registers[0x33] = 0x05U;
     registers[0x45] = 0xC0U;
     registers[1] = 1U;
-    registers[2] = 0x40U; /* +1g */
+    registers[2] = 0x10U; /* +1g at +/-8g */
     registers[3] = 1U;
     registers[5] = 1U;
     bus_ok = true;
@@ -78,7 +78,7 @@ int main(void)
     imu_poll();
     imu_get_snapshot(&snapshot);
     assert(reads == 1U && snapshot.valid && snapshot.status == IMU_OK);
-    assert(snapshot.sequence == 1U && snapshot.sample.x == 4096);
+    assert(snapshot.sequence == 1U && snapshot.sample.x == 1024);
     assert(snapshot.timestamp_ms == ticks * 10U + 1U);
     imu_poll();
     assert(reads == 1U);
@@ -91,7 +91,7 @@ int main(void)
     imu_poll();
     imu_get_snapshot(&snapshot);
     assert(snapshot.status == IMU_BUS_ERROR && snapshot.read_errors == 1U);
-    assert(snapshot.sequence == 2U && snapshot.sample.x == 4096 && snapshot.valid);
+    assert(snapshot.sequence == 2U && snapshot.sample.x == 1024 && snapshot.valid);
     bus_ok = true;
     ++ticks;
     imu_poll();

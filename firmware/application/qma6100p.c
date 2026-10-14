@@ -15,6 +15,8 @@
 #define REG_AFE_ANA 0x56U
 #define REG_TST1_ANA 0x5FU
 
+_Static_assert(QMA6100P_RANGE_G == 8U, "Range metadata must match the 0x04 register setting");
+
 static qma6100p_status_t startup(qma6100p_t *device)
 {
     /* QST Rev. E section 6.3. Bound both waits so a bad IMU cannot block the app. */
@@ -121,7 +123,7 @@ qma6100p_status_t qma6100p_init(qma6100p_t *device, qma6100p_bus_t bus)
         uint8_t mask;
         uint8_t value;
     } settings[] = {
-        {REG_RANGE, 0x0FU, 0x01U},
+        {REG_RANGE, 0x0FU, 0x04U},
         /* MCLK=51.2kHz (4), ODR=100Hz (0): see recorded RIOT clock evidence. */
         {REG_BW, 0x1FU, 0U},
         {REG_INT_CFG, 0x40U, 0U},

@@ -146,7 +146,7 @@ int main(void)
     assert(qma6100p_init(&device, bus) == QMA6100P_OK);
     assert(device.ready && !reset_asserted && delay_total >= 12U);
     assert(startup_writes == sizeof(startup) / sizeof(startup[0]));
-    assert(regs[0x0F] == 0x51U && regs[0x10] == 0xE0U);
+    assert(regs[0x0F] == 0x54U && regs[0x10] == 0xE0U); /* +/-8g, preserving high bits */
     assert(regs[0x11] == 0x84U && regs[0x21] == 0x8CU);
     set_axis(1, -8192, 3);
     set_axis(3, 8191, 0);

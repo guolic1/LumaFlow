@@ -73,8 +73,10 @@ static void quiet_for(uint32_t duration, int16_t x, int16_t y, int16_t z)
 
 static void test_static_orientations(void)
 {
-    const int16_t orientations[][3] = {
-        {0, 0, 4096}, {4096, 0, 0}, {0, -4096, 0}, {2365, 2365, 2365}};
+    const int16_t orientations[][3] = {{0, 0, IMU_COUNTS_PER_G},
+                                       {IMU_COUNTS_PER_G, 0, 0},
+                                       {0, -(int16_t)IMU_COUNTS_PER_G, 0},
+                                       {591, 591, 591}};
     for (unsigned i = 0U; i < sizeof(orientations) / sizeof(orientations[0]); ++i)
     {
         const int16_t *a = orientations[i];
@@ -97,9 +99,9 @@ static void test_wake_all_axes(void)
     {
         for (int sign = -1; sign <= 1; sign += 2)
         {
-            reset(0U, 0, 0, 4096);
-            quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, 4096);
-            int16_t a[3] = {0, 0, 4096};
+            reset(0U, 0, 0, IMU_COUNTS_PER_G);
+            quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, IMU_COUNTS_PER_G);
+            int16_t a[3] = {0, 0, IMU_COUNTS_PER_G};
             a[axis] += (int16_t)(sign * (MOTION_SLEEP_WAKE_THRESHOLD_RAW - 1));
             feed(now_ms + 10U, a[0], a[1], a[2]);
             assert(motion_sleep_is_sleeping() && starts == 0U);
@@ -116,44 +118,45 @@ static void test_wake_all_axes(void)
 
 static void test_motion_and_noise(void)
 {
-    reset(0U, 0, 0, 4096);
+    reset(0U, 0, 0, IMU_COUNTS_PER_G);
     for (unsigned tick = 1U; tick < 2000U; ++tick)
     {
         int16_t noise = tick % 2U ? 8 : -8;
-        feed(tick * 10U, noise, -noise, (int16_t)(4096 + noise));
+        feed(tick * 10U, noise, -noise, (int16_t)((int32_t)IMU_COUNTS_PER_G + noise));
         assert(!motion_sleep_is_sleeping());
     }
-    feed(20000U, MOTION_SLEEP_QUIET_THRESHOLD_RAW, 0, 4096);
-    quiet_for(MOTION_SLEEP_IDLE_MS - 10U, MOTION_SLEEP_QUIET_THRESHOLD_RAW, 0, 4096);
+    feed(20000U, MOTION_SLEEP_QUIET_THRESHOLD_RAW, 0, IMU_COUNTS_PER_G);
+    quiet_for(MOTION_SLEEP_IDLE_MS - 10U, MOTION_SLEEP_QUIET_THRESHOLD_RAW, 0, IMU_COUNTS_PER_G);
     assert(!motion_sleep_is_sleeping());
-    feed(now_ms + 10U, MOTION_SLEEP_QUIET_THRESHOLD_RAW, 0, 4096);
+    feed(now_ms + 10U, MOTION_SLEEP_QUIET_THRESHOLD_RAW, 0, IMU_COUNTS_PER_G);
     assert(motion_sleep_is_sleeping());
     /* Small incremental changes must accumulate rather than be discarded each sample. */
-    reset(0U, 0, 0, 4096);
+    reset(0U, 0, 0, IMU_COUNTS_PER_G);
     for (unsigned tick = 1U; tick <= 4000U; ++tick)
     {
-        feed(tick * 10U, (int16_t)tick, 0, 4096);
+        feed(tick * 10U, (int16_t)tick, 0, IMU_COUNTS_PER_G);
         assert(!motion_sleep_is_sleeping());
     }
 }
 
 static void test_invalid_and_missing_samples(void)
 {
-    reset(0U, 0, 0, 4096);
-    feed(MOTION_SLEEP_IDLE_MS, 0, 0, 4096); /* Cannot infer stillness across a missing interval. */
+    reset(0U, 0, 0, IMU_COUNTS_PER_G);
+    feed(MOTION_SLEEP_IDLE_MS, 0, 0,
+         IMU_COUNTS_PER_G); /* Cannot infer stillness across a missing interval. */
     assert(!motion_sleep_is_sleeping());
     now_ms += MOTION_SLEEP_IDLE_MS;
     assert(motion_sleep_poll()); /* Stale duplicate must not complete the quiet timer. */
     assert(!motion_sleep_is_sleeping());
-    feed(now_ms, 0, 0, 4096);
-    quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, 4096);
+    feed(now_ms, 0, 0, IMU_COUNTS_PER_G);
+    quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, IMU_COUNTS_PER_G);
     assert(motion_sleep_is_sleeping());
     sample.status = IMU_BUS_ERROR;
     assert(motion_sleep_poll());
     assert(!motion_sleep_is_sleeping() && !paused && display_running);
     sample.status = IMU_OK;
-    feed(now_ms + 10U, 0, 0, 4096);
-    quiet_for(MOTION_SLEEP_IDLE_MS - 10U, 0, 0, 4096);
+    feed(now_ms + 10U, 0, 0, IMU_COUNTS_PER_G);
+    quiet_for(MOTION_SLEEP_IDLE_MS - 10U, 0, 0, IMU_COUNTS_PER_G);
     assert(!motion_sleep_is_sleeping());
     sample.ready = false;
     now_ms += MOTION_SLEEP_IDLE_MS;
@@ -163,18 +166,18 @@ static void test_invalid_and_missing_samples(void)
 
 static void test_sequence_wrap_and_failure(void)
 {
-    reset(UINT32_MAX - 10000U, 0, 0, 4096);
+    reset(UINT32_MAX - 10000U, 0, 0, IMU_COUNTS_PER_G);
     sample.sequence = UINT32_MAX - 5U;
-    quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, 4096);
+    quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, IMU_COUNTS_PER_G);
     assert(motion_sleep_is_sleeping());
     sample.sample.x = MOTION_SLEEP_WAKE_THRESHOLD_RAW;
     assert(motion_sleep_poll()); /* Same sequence is not a newly acquired measurement. */
     assert(motion_sleep_is_sleeping());
-    feed(now_ms + 10U, MOTION_SLEEP_WAKE_THRESHOLD_RAW, 0, 4096);
+    feed(now_ms + 10U, MOTION_SLEEP_WAKE_THRESHOLD_RAW, 0, IMU_COUNTS_PER_G);
     assert(!motion_sleep_is_sleeping());
 
-    reset(0U, 0, 0, 4096);
-    quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, 4096);
+    reset(0U, 0, 0, IMU_COUNTS_PER_G);
+    quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, IMU_COUNTS_PER_G);
     restart_ok = false;
     now_ms += 10U;
     sample.timestamp_ms = now_ms;
@@ -184,8 +187,24 @@ static void test_sequence_wrap_and_failure(void)
     assert(motion_sleep_is_sleeping() && paused && !display_running);
 }
 
+static void test_8g_physical_thresholds(void)
+{
+    reset(0U, 0, 0, 1024); /* +1g at the new 1024 LSB/g sensitivity */
+    quiet_for(20000U, 0, 0, 1024);
+    feed(20000U, 103, 0, 1024); /* first representable change at or above 0.1g */
+    quiet_for(10000U, 103, 0, 1024);
+    assert(!motion_sleep_is_sleeping());
+    quiet_for(20000U, 103, 0, 1024);
+    assert(motion_sleep_is_sleeping());
+    feed(now_ms + 10U, 103 + 511, 0, 1024);
+    assert(motion_sleep_is_sleeping());
+    feed(now_ms + 10U, 103 + 512, 0, 1024); /* exactly 0.5g from the reference */
+    assert(!motion_sleep_is_sleeping());
+}
+
 int main(void)
 {
+    test_8g_physical_thresholds();
     test_static_orientations();
     test_wake_all_axes();
     test_motion_and_noise();

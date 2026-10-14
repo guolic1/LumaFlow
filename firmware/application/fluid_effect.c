@@ -38,6 +38,9 @@ _Static_assert(IMU_SAMPLE_RATE_HZ % FLUID_EFFECT_RATE_HZ == 0U,
 
 _Static_assert(FLUID_INPUT_FILTER_Q8 >= 0 && FLUID_INPUT_FILTER_Q8 <= 256,
                "Input filter coefficient must be in 0..256");
+_Static_assert(FLUID_INPUT_COUNTS_PER_G % IMU_COUNTS_PER_G == 0 &&
+                   FLUID_INPUT_COUNTS_PER_G / IMU_COUNTS_PER_G <= 4,
+               "Normalized signed 14-bit IMU samples must fit the int16 solver input");
 
 static void sample_input(const imu_snapshot_t *snapshot, bool healthy)
 {
@@ -53,18 +56,22 @@ static void sample_input(const imu_snapshot_t *snapshot, bool healthy)
     {
         return;
     }
+    /* Keep force tuning calibrated to the original 4096 units/g while the sensor
+     * and serial protocol retain native counts over the wider +/-8g range. */
+    int32_t input_x =
+        (int32_t)snapshot->sample.x * FLUID_INPUT_COUNTS_PER_G / (int32_t)IMU_COUNTS_PER_G;
+    int32_t input_y =
+        (int32_t)snapshot->sample.y * FLUID_INPUT_COUNTS_PER_G / (int32_t)IMU_COUNTS_PER_G;
     if (!effect.input_valid)
     {
-        effect.filtered_x = snapshot->sample.x;
-        effect.filtered_y = snapshot->sample.y;
+        effect.filtered_x = input_x;
+        effect.filtered_y = input_y;
     }
     else
     {
         /* Filter at the 100Hz sample rate, not the 25Hz physics rate. */
-        effect.filtered_x += ((int32_t)snapshot->sample.x - effect.filtered_x) *
-                             (int32_t)FLUID_INPUT_FILTER_Q8 / 256;
-        effect.filtered_y += ((int32_t)snapshot->sample.y - effect.filtered_y) *
-                             (int32_t)FLUID_INPUT_FILTER_Q8 / 256;
+        effect.filtered_x += (input_x - effect.filtered_x) * (int32_t)FLUID_INPUT_FILTER_Q8 / 256;
+        effect.filtered_y += (input_y - effect.filtered_y) * (int32_t)FLUID_INPUT_FILTER_Q8 / 256;
     }
     effect.input_sequence = snapshot->sequence;
     effect.input_valid = true;

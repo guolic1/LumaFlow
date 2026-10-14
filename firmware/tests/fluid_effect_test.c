@@ -70,7 +70,7 @@ static void healthy(void)
     sample.valid = true;
     sample.status = IMU_OK;
     sample.timestamp_ms = imu_platform_time_ms();
-    sample.sample.x = -4096;
+    sample.sample.x = -(int16_t)IMU_COUNTS_PER_G;
 }
 
 static void at_time(uint32_t now_us)
@@ -99,6 +99,43 @@ static void finish(unsigned target)
     {
         fluid_effect_poll();
         assert(++calls < 100U);
+    }
+}
+
+static void test_8g_input_scaling(void)
+{
+    static fluid_sim_t reference;
+    const int16_t forces[][4] = {
+        {-1024, 0, -4096, 0},
+        {1024, 0, 4096, 0},
+        {0, -1024, 0, -4096},
+        {0, 1024, 0, 4096},
+        {-8192, 8191, INT16_MIN, 32764},
+    };
+    for (unsigned i = 0U; i < sizeof(forces) / sizeof(forces[0]); ++i)
+    {
+        at_time(0U);
+        sample.sample.x = forces[i][0];
+        sample.sample.y = forces[i][1];
+        sample.sequence = 1U;
+        display_accepts = display_running = true;
+        fluid_effect_init();
+        fluid_effect_poll();
+        at_time(40000U);
+        sample.sample.x = forces[i][0];
+        sample.sample.y = forces[i][1];
+        sample.sequence = 2U;
+        finish(1U);
+        fluid_sim_init(&reference);
+        assert(fluid_sim_begin(&reference, forces[i][2], forces[i][3]));
+        while (!fluid_sim_advance(&reference))
+        {
+        }
+        bool expected[217];
+        assert(fluid_sim_render(&reference, expected));
+        /* Native +/-8g samples must have the same physical effect as the calibrated
+         * 4096-units/g solver input, including the full signed sensor range. */
+        assert(memcmp(displayed, expected, sizeof(expected)) == 0);
     }
 }
 
@@ -157,7 +194,7 @@ static void test_pause_resume(void)
 static void test_motion_sleep_integration(void)
 {
     reset();
-    sample.sample = (qma6100p_sample_t){0, -4096, 0, 7U};
+    sample.sample = (qma6100p_sample_t){0, -(int16_t)IMU_COUNTS_PER_G, 0, 7U};
     ++sample.sequence;
     motion_sleep_init();
     assert(motion_sleep_poll());
@@ -435,7 +472,7 @@ static void test_visible_splash(void)
 {
     at_time(0U);
     sample.sample.x = 0;
-    sample.sample.y = -4096;
+    sample.sample.y = -(int16_t)IMU_COUNTS_PER_G;
     display_accepts = true;
     fluid_effect_init();
     bool detached = false;
@@ -444,7 +481,7 @@ static void test_visible_splash(void)
     {
         at_time(tick * 10000U);
         sample.sample.x = 0;
-        sample.sample.y = -4096;
+        sample.sample.y = -(int16_t)IMU_COUNTS_PER_G;
         sample.sequence = tick + 1U;
         if (tick >= 100U && tick < 200U)
         {
@@ -465,6 +502,7 @@ static void test_visible_splash(void)
 
 int main(void)
 {
+    test_8g_input_scaling();
     test_motion_sleep_integration();
     test_pause_resume();
     test_pause_during_step();
