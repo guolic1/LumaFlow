@@ -19,20 +19,20 @@
 
 /* Input: smaller divisor = stronger force; larger filter coefficient = faster response. */
 #ifndef FLUID_ACCEL_DIVISOR
-#define FLUID_ACCEL_DIVISOR 32
+#define FLUID_ACCEL_DIVISOR 16
 #endif
 #ifndef FLUID_INPUT_FILTER_Q8
-#define FLUID_INPUT_FILTER_Q8 128
+#define FLUID_INPUT_FILTER_Q8 160
 #endif
 
 /* Velocity retained each simulation step: 256 disables drag, 0 stops old motion.
  * Drag applies before the new acceleration impulse. */
 #ifndef FLUID_VELOCITY_RETAIN_Q8
-#define FLUID_VELOCITY_RETAIN_Q8 252
+#define FLUID_VELOCITY_RETAIN_Q8 256
 #endif
 /* Outward normal speed returned inward: 0 = no bounce, 256 = elastic. */
 #ifndef FLUID_WALL_RESTITUTION_Q8
-#define FLUID_WALL_RESTITUTION_Q8 32
+#define FLUID_WALL_RESTITUTION_Q8 160
 #endif
 
 /* Larger FLIP share preserves more inertia. Density correction divisor works inversely. */
@@ -51,7 +51,7 @@
 /* Pairwise cohesion approximates surface tension, without attracting distant drops.
  * Strength 0 disables it; start with 2..8. Radius uses the max+half-min distance norm. */
 #ifndef FLUID_SURFACE_TENSION_Q8
-#define FLUID_SURFACE_TENSION_Q8 3
+#define FLUID_SURFACE_TENSION_Q8 4
 #endif
 #ifndef FLUID_SURFACE_TENSION_RADIUS
 #define FLUID_SURFACE_TENSION_RADIUS 1408
