@@ -7,10 +7,13 @@
 #include "imu.h"
 #include "imu_platform.h"
 #include "led_matrix.h"
+#include "motion_sleep.h"
+#include "motion_sleep_config.h"
 
 static imu_snapshot_t sample;
 static uint32_t ticks, microseconds;
 static bool display_accepts;
+static bool display_running = true;
 static unsigned submissions;
 static bool displayed[217];
 
@@ -33,13 +36,25 @@ uint32_t imu_platform_time_us(void)
 }
 bool led_matrix_submit(const bool pixels[217])
 {
-    if (!display_accepts)
+    if (!display_accepts || !display_running)
     {
         return false;
     }
     memcpy(displayed, pixels, sizeof(displayed));
     ++submissions;
     return true;
+}
+bool led_matrix_init(void)
+{
+    assert(!display_running);
+    display_running = true;
+    memset(displayed, 0, sizeof(displayed));
+    return true;
+}
+void led_matrix_stop(void)
+{
+    assert(display_running);
+    display_running = false;
 }
 
 static fluid_effect_stats_t stats(void)
@@ -67,8 +82,10 @@ static void at_time(uint32_t now_us)
 
 static void reset(void)
 {
+    sample = (imu_snapshot_t){0};
     at_time(0U);
     display_accepts = true;
+    display_running = true;
     submissions = 0U;
     fluid_effect_init();
     fluid_effect_poll();
@@ -135,6 +152,53 @@ static void test_pause_resume(void)
     ++sample.sequence;
     finish(2U);
     assert(stats().missed_steps == 0U && memcmp(expected, displayed, sizeof(expected)) == 0);
+}
+
+static void test_motion_sleep_integration(void)
+{
+    reset();
+    sample.sample = (qma6100p_sample_t){0, -4096, 0, 7U};
+    ++sample.sequence;
+    motion_sleep_init();
+    assert(motion_sleep_poll());
+    fluid_effect_poll();
+    const unsigned sleep_tick = MOTION_SLEEP_IDLE_MS / 10U;
+    for (unsigned tick = 1U; tick <= sleep_tick + 500U; ++tick)
+    {
+        at_time(tick * 10000U);
+        sample.sample.x = 0;
+        ++sample.sequence;
+        for (unsigned poll = 0U; poll < 60U; ++poll)
+        {
+            assert(motion_sleep_poll());
+            fluid_effect_poll();
+        }
+        assert(motion_sleep_is_sleeping() == (tick >= sleep_tick));
+        assert(display_running == (tick < sleep_tick));
+    }
+    unsigned completed = stats().completed_steps;
+    assert(completed == MOTION_SLEEP_IDLE_MS / 40U - 1U && stats().missed_steps == 0U);
+    unsigned count = submissions;
+    bool saved[217];
+    memcpy(saved, displayed, sizeof(saved));
+    for (unsigned tick = sleep_tick + 501U; tick <= sleep_tick + 505U; ++tick)
+    {
+        at_time(tick * 10000U);
+        sample.sample.x = MOTION_SLEEP_WAKE_THRESHOLD_RAW;
+        ++sample.sequence;
+        for (unsigned poll = 0U; poll < 60U; ++poll)
+        {
+            assert(motion_sleep_poll());
+            fluid_effect_poll();
+        }
+        assert(!motion_sleep_is_sleeping() && display_running);
+        if (tick == sleep_tick + 501U)
+        {
+            assert(submissions == count + 1U);
+            assert(memcmp(saved, displayed, sizeof(saved)) == 0);
+        }
+    }
+    assert(stats().completed_steps == completed + 1U && stats().missed_steps == 0U);
 }
 
 static void test_pause_during_step(void)
@@ -401,6 +465,7 @@ static void test_visible_splash(void)
 
 int main(void)
 {
+    test_motion_sleep_integration();
     test_pause_resume();
     test_pause_during_step();
     test_visible_splash();

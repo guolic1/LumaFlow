@@ -6,6 +6,7 @@
 #include "i2c.h"
 #include "imu.h"
 #include "led_matrix.h"
+#include "motion_sleep.h"
 #include "serial_uart.h"
 
 extern void SystemClock_Config(void);
@@ -39,6 +40,7 @@ int main(void)
     }
     imu_init();
     fluid_effect_init();
+    motion_sleep_init();
 
     while (1)
     {
@@ -52,6 +54,18 @@ int main(void)
             serial_uart_flush();
             NVIC_SystemReset();
         }
+        if (!motion_sleep_poll())
+        {
+            Error_Handler();
+        }
         fluid_effect_poll();
+        if (motion_sleep_is_sleeping())
+        {
+            /* TIM3 and UART/DMA stay clocked in normal Sleep. Keep acquiring the
+             * IMU in the main loop after each interrupt; Stop would halt TIM3. */
+            LL_LPM_EnableSleep();
+            __DSB();
+            __WFI();
+        }
     }
 }

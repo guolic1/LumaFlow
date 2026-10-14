@@ -8,6 +8,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     led_matrix.c
     led_matrix_scan.c
     main.c
+    motion_sleep.c
 )
 
 # The fluid solver is compute bound; keep the rest of the image size optimized.

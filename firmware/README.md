@@ -62,6 +62,7 @@ OTA 仅接受 Application 原始 BIN。Bootloader 自动写入校验元数据；
 - IMU：QMA6100P，I2C 地址 `0x12`，±2g；TIM3 每 10ms 调度主循环读取，不使用 IMU 外部中断。
 - 液体：默认运行 64 粒子、13×13 网格的定点 PIC/FLIP，目标 25Hz；IMU 无效或数据过期时暂停运动。实际计算耗时通过 `fluid` 命令查询。
 - 坐标：LED 位号从右向左、从下向上增加；IMU X 向右、Y 向下。
+- 休眠：三轴加速度变化小于约 0.05g 持续 30 秒后关闭 LED、暂停液体，MCU 进入普通 Sleep；保留 100Hz IMU 采样和串口，变化达到约 0.08g 时恢复。阈值与超时在 `application/motion_sleep_config.h` 调节。
 
 液体效果参数集中在 `application/fluid_config.h`，修改后重新构建 Application。
 
