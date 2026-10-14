@@ -8,6 +8,7 @@ static uint8_t regs[256];
 static int fail_reg;
 static int fail_value;
 static bool ignore_config;
+static int ignored_motion_reg;
 static uint32_t delay_total;
 static unsigned burst_reads;
 static unsigned writes;
@@ -47,6 +48,10 @@ static bool read_regs(uint8_t reg, uint8_t *data, uint8_t length)
     }
     assert((unsigned)reg + length <= sizeof(regs));
     memcpy(data, &regs[reg], length);
+    if (reg == 0x09U)
+    {
+        regs[reg] = 0U; /* Selective read-to-clear for the latched motion source. */
+    }
     return true;
 }
 
@@ -93,7 +98,7 @@ static bool write_reg(uint8_t reg, uint8_t value)
     {
         assert(startup_writes == sizeof(startup) / sizeof(startup[0]));
     }
-    if (!(ignore_config && reg == 0x0FU))
+    if (!(ignore_config && reg == 0x0FU) && reg != ignored_motion_reg)
     {
         regs[reg] = value;
     }
@@ -119,6 +124,7 @@ static void reset(void)
     fail_reg = -1;
     fail_value = -1;
     ignore_config = false;
+    ignored_motion_reg = -1;
     delay_total = 0U;
     burst_reads = 0U;
     writes = 0U;
@@ -138,8 +144,57 @@ static void set_axis(unsigned reg, int value, unsigned flags)
     regs[reg + 1U] = (uint8_t)(bits >> 8U);
 }
 
+static void test_motion_wake(void)
+{
+    qma6100p_t device;
+    reset();
+    assert(qma6100p_init(&device, bus) == QMA6100P_OK);
+    regs[0x18] = 0xF8U;
+    regs[0x19] = 0xFFU;
+    regs[0x1A] = 0xFCU;
+    regs[0x20] = 0xFEU;
+    regs[0x2C] = 0xFFU;
+    regs[0x2F] = 0xFFU;
+    regs[0x30] = 0x7FU;
+    regs[0x09] = 0x03U; /* Stale event must be cleared before arming. */
+    assert(qma6100p_set_motion_wake(&device, true, 2000U, 25U) == QMA6100P_OK);
+    assert(regs[0x10] == 0xE6U && regs[0x0F] == 0x54U && regs[0x11] == 0x84U);
+    assert(regs[0x18] == 0x1FU && regs[0x19] == 0U && regs[0x1A] == 0x0DU);
+    assert(regs[0x20] == 0xFDU && regs[0x21] == 0x0DU);
+    assert(regs[0x2C] == 0xFCU && regs[0x2E] == 128U && regs[0x2F] == 0xBEU);
+    assert(regs[0x30] == 0xFFU && regs[0x09] == 0U);
+    bool motion = true;
+    assert(qma6100p_read_motion(&device, &motion) == QMA6100P_OK && !motion);
+    regs[0x09] = 0x0CU; /* Negative Z event; the sign alone is not an event. */
+    assert(qma6100p_read_motion(&device, &motion) == QMA6100P_OK && motion);
+    assert(regs[0x09] == 0U);
+    regs[0x09] = 0x08U;
+    assert(qma6100p_read_motion(&device, &motion) == QMA6100P_OK && !motion);
+    fail_reg = 0x09;
+    motion = true;
+    assert(qma6100p_read_motion(&device, &motion) == QMA6100P_BUS_ERROR && motion);
+    fail_reg = -1;
+    assert(qma6100p_set_motion_wake(&device, false, 0U, 0U) == QMA6100P_OK);
+    assert(regs[0x10] == 0xE0U && (regs[0x18] & 0xE7U) == 0U);
+    assert((regs[0x1A] & 0xF3U) == 0U && regs[0x21] == 0x0CU);
+    unsigned before = writes;
+    assert(qma6100p_set_motion_wake(&device, true, 0U, 25U) == QMA6100P_CONFIG_ERROR);
+    assert(qma6100p_set_motion_wake(&device, true, 4000U, 25U) == QMA6100P_CONFIG_ERROR);
+    assert(qma6100p_set_motion_wake(&device, true, 2000U, 13U) == QMA6100P_CONFIG_ERROR);
+    assert(writes == before);
+    fail_reg = 0x2E;
+    assert(qma6100p_set_motion_wake(&device, true, 2000U, 25U) == QMA6100P_BUS_ERROR);
+    assert((regs[0x18] & 7U) == 0U); /* Failed setup never enables the detector. */
+    fail_reg = -1;
+    regs[0x2E] = 0U;
+    ignored_motion_reg = 0x2E;
+    assert(qma6100p_set_motion_wake(&device, true, 2000U, 25U) == QMA6100P_CONFIG_ERROR);
+    assert((regs[0x18] & 7U) == 0U);
+}
+
 int main(void)
 {
+    test_motion_wake();
     qma6100p_t device;
     qma6100p_sample_t sample;
     reset();

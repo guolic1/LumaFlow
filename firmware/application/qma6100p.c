@@ -4,10 +4,21 @@
 
 #define REG_CHIP_ID 0x00U
 #define REG_DATA 0x01U
+#define REG_MOTION_STATUS 0x09U
 #define REG_RANGE 0x0FU
 #define REG_BW 0x10U
 #define REG_PM 0x11U
+#define REG_INT_EN0 0x16U
+#define REG_INT_EN1 0x17U
+#define REG_INT_EN2 0x18U
+#define REG_INT_MAP0 0x19U
+#define REG_INT_MAP1 0x1AU
+#define REG_INT_PIN 0x20U
 #define REG_INT_CFG 0x21U
+#define REG_MOTION_DURATION 0x2CU
+#define REG_MOTION_THRESHOLD 0x2EU
+#define REG_MOTION_INPUT 0x2FU
+#define REG_MOTION_RESET 0x30U
 #define REG_NVM 0x33U
 #define REG_RESET 0x36U
 #define REG_CHIP_STATE 0x45U
@@ -167,5 +178,88 @@ qma6100p_status_t qma6100p_read(qma6100p_t *device, qma6100p_sample_t *sample)
     sample->y = decode_axis(data[2], data[3]);
     sample->z = decode_axis(data[4], data[5]);
     sample->new_data = (uint8_t)((data[0] & 1U) | ((data[2] & 1U) << 1U) | ((data[4] & 1U) << 2U));
+    return QMA6100P_OK;
+}
+
+qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uint16_t threshold_mg,
+                                           uint16_t sample_rate_hz)
+{
+    if (device == NULL || !device->ready)
+    {
+        return QMA6100P_CONFIG_ERROR;
+    }
+    uint32_t threshold = ((uint32_t)threshold_mg * QMA6100P_COUNTS_PER_G + 15999U) / 16000U;
+    uint8_t odr = sample_rate_hz == 25U ? 0x06U : (sample_rate_hz == 50U ? 0x05U : 0U);
+    if (enabled && (threshold_mg == 0U || threshold > 255U ||
+                    (sample_rate_hz != 25U && sample_rate_hz != 50U && sample_rate_hz != 100U)))
+    {
+        return QMA6100P_CONFIG_ERROR;
+    }
+    /* Disable sources before changing their input/ODR. Keep undefined register
+     * bits intact; no other INT1 source may wake the sleeping application. */
+    const struct
+    {
+        uint8_t reg, mask, value;
+    } settings[] = {
+        {REG_INT_EN2, 0xE7U, 0U},
+        {REG_INT_MAP0, 0xFFU, 0U},
+        {REG_INT_MAP1, 0xF3U, 0U},
+        {REG_INT_EN0, 0xFFU, 0U},
+        {REG_INT_EN1, 0x70U, 0U},
+        /* RIOT qma6100p_odr_t: 0x06=25Hz, 0x05=50Hz, 0x00=100Hz at MCLK=51.2kHz.
+         * https://api.riot-os.org/group__drivers__qma6100p.html */
+        {REG_BW, 0x1FU, enabled ? odr : 0U},
+        {REG_INT_PIN, 0x03U, 0x01U},
+        {REG_INT_CFG, 0xC1U, enabled ? 0x01U : 0U},
+        {REG_MOTION_DURATION, 0x03U, 0U}, /* One qualifying sample. */
+        {REG_MOTION_INPUT, 0x41U, 0U}, /* Adjacent-sample slope, not high-g/significant motion. */
+        {REG_MOTION_RESET, 0x80U, enabled ? 0x80U : 0U}, /* Detector bypasses the data LPF. */
+    };
+    for (unsigned i = 0U; i < sizeof(settings) / sizeof(settings[0]); ++i)
+    {
+        qma6100p_status_t status =
+            update(device, settings[i].reg, settings[i].mask, settings[i].value);
+        if (status != QMA6100P_OK)
+        {
+            return status;
+        }
+    }
+    /* Let one complete sample at the new rate settle before resetting/arming
+     * the detector, so an ODR transition is not interpreted as motion. */
+    device->bus.delay_ms(enabled ? 1000U / sample_rate_hz : 10U);
+    bool unused;
+    qma6100p_status_t status = qma6100p_read_motion(device, &unused);
+    if (status != QMA6100P_OK || !enabled)
+    {
+        return status;
+    }
+    status = update(device, REG_MOTION_THRESHOLD, 0xFFU, (uint8_t)threshold);
+    if (status == QMA6100P_OK)
+    {
+        status = update(device, REG_MOTION_RESET, 0x01U, 0U);
+    }
+    if (status == QMA6100P_OK)
+    {
+        status = update(device, REG_MOTION_RESET, 0x01U, 0x01U);
+    }
+    if (status == QMA6100P_OK)
+    {
+        status = update(device, REG_INT_MAP1, 0x01U, 0x01U);
+    }
+    return status == QMA6100P_OK ? update(device, REG_INT_EN2, 0x07U, 0x07U) : status;
+}
+
+qma6100p_status_t qma6100p_read_motion(qma6100p_t *device, bool *motion)
+{
+    if (device == NULL || !device->ready || motion == NULL)
+    {
+        return QMA6100P_CONFIG_ERROR;
+    }
+    uint8_t status;
+    if (!device->bus.read(REG_MOTION_STATUS, &status, 1U))
+    {
+        return QMA6100P_BUS_ERROR;
+    }
+    *motion = (status & 0x07U) != 0U;
     return QMA6100P_OK;
 }

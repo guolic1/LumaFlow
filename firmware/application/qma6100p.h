@@ -40,5 +40,10 @@ typedef struct
  * Samples retain native signed 14-bit counts (1024 LSB/g), not normalized units. */
 qma6100p_status_t qma6100p_init(qma6100p_t *device, qma6100p_bus_t bus);
 qma6100p_status_t qma6100p_read(qma6100p_t *device, qma6100p_sample_t *sample);
+/* Latched INT1, active high, XYZ adjacent-sample motion. Sleep rates: 25/50/100Hz.
+ * Disabling restores the normal 100Hz ODR; threshold/rate are then ignored. */
+qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uint16_t threshold_mg,
+                                           uint16_t sample_rate_hz);
+qma6100p_status_t qma6100p_read_motion(qma6100p_t *device, bool *motion);
 
 #endif
