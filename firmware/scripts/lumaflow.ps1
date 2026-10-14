@@ -220,16 +220,17 @@ function Get-DeviceImu($Client, [int]$TimeoutMs = 5000) {
     $z = [BitConverter]::ToInt16($data, 12)
     $statusNames = @('OK', 'BUS_ERROR', 'CHIP_ID_ERROR', 'CONFIG_ERROR', 'NOT_READY', 'STOPPED')
     if ($data[14] -gt 7 -or $data[15] -gt 3 -or $data[24] -ge $statusNames.Length -or
-        $data[25] -ne 2 -or [BitConverter]::ToUInt16($data, 26) -ne 100 -or
+        $data[25] -notin @(2, 8) -or [BitConverter]::ToUInt16($data, 26) -ne 100 -or
         $x -lt -8192 -or $x -gt 8191 -or $y -lt -8192 -or $y -gt 8191 -or
         $z -lt -8192 -or $z -gt 8191) {
         throw 'Invalid GET_IMU response fields.'
     }
+    $countsPerG = 8192.0 / $data[25]
     return [pscustomobject]@{
         Sequence = [BitConverter]::ToUInt32($data, 0)
         TimestampMs = [BitConverter]::ToUInt32($data, 4)
         RawX = $x; RawY = $y; RawZ = $z
-        Xg = $x / 4096.0; Yg = $y / 4096.0; Zg = $z / 4096.0
+        Xg = $x / $countsPerG; Yg = $y / $countsPerG; Zg = $z / $countsPerG
         NewData = [int]$data[14]
         Valid = ($data[15] -band 1) -ne 0
         Ready = ($data[15] -band 2) -ne 0

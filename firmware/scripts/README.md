@@ -54,7 +54,7 @@ pwsh -NoProfile -File scripts/imu.ps1 -Help
 支持 `-BaudRate`、`-TimeoutMs`、`-Verbose`、`-Help` / `-h`；串口等待行为与通用工具一致。
 
 CSV 列为 `sequence,timestamp_ms,x_g,y_g,z_g,new_data,read_errors,missed_ticks,host_skipped`。
-XYZ 单位为 g，固定 ±2g 量程；`new_data` 的 bit0/1/2 分别表示 X/Y/Z 自上次读取后更新。
+XYZ 单位为 g，当前固件量程为 ±8g；脚本按设备上报的量程换算，也兼容旧 ±2g 固件。`new_data` 的 bit0/1/2 分别表示 X/Y/Z 自上次读取后更新。
 序号对每次成功的设备读取递增，因此 NEWDATA=0 的记录仍可能出现。时间戳为设备读取开始时的毫秒数。
 `read_errors` 是设备累计 I2C 读取失败数，`missed_ticks` 是设备主循环漏处理周期累计数，
 `host_skipped` 是相邻输出之间未被脚本取到的成功读取数；这些列可以区分设备采集和主机取数的遗漏。

@@ -2,14 +2,14 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . "$PSScriptRoot/serial_test.ps1"
 
-function New-ImuPayload([uint32]$Sequence = 1, [byte]$Status = 0, [byte]$Flags = 3) {
+function New-ImuPayload([uint32]$Sequence = 1, [byte]$Status = 0, [byte]$Flags = 3, [byte]$RangeG = 8) {
     $data = [byte[]]::new(28)
     [Array]::Copy([BitConverter]::GetBytes($Sequence), 0, $data, 0, 4)
     [Array]::Copy([BitConverter]::GetBytes([uint32]1000), 0, $data, 4, 4)
     [Array]::Copy([BitConverter]::GetBytes([int16]-8192), 0, $data, 8, 2)
     [Array]::Copy([BitConverter]::GetBytes([int16]8191), 0, $data, 10, 2)
     [Array]::Copy([BitConverter]::GetBytes([int16]-4096), 0, $data, 12, 2)
-    $data[14] = 5; $data[15] = $Flags; $data[24] = $Status; $data[25] = 2; $data[26] = 100
+    $data[14] = 5; $data[15] = $Flags; $data[24] = $Status; $data[25] = $RangeG; $data[26] = 100
     return ,$data
 }
 
@@ -21,8 +21,11 @@ $fake = New-FakePort {
 $sample = Get-DeviceImu (New-SerialClient $fake)
 Assert-True ($sample.Sequence -eq [uint32]::MaxValue -and $sample.TimestampMs -eq 1000) 'Unsigned counters'
 Assert-True ($sample.RawX -eq -8192 -and $sample.RawY -eq 8191 -and $sample.RawZ -eq -4096) 'Signed raw axes'
-Assert-True ($sample.Xg -eq -2 -and $sample.Yg -eq (8191 / 4096.0) -and $sample.Zg -eq -1) 'Exact g scaling'
+Assert-True ($sample.RangeG -eq 8 -and $sample.Xg -eq -8 -and $sample.Yg -eq (8191 / 1024.0) -and $sample.Zg -eq -4) 'Exact 8g scaling'
 Assert-True ($sample.NewData -eq 5 -and $sample.Valid -and $sample.Ready -and $sample.Status -eq 'OK') 'Sample flags'
+$fake = New-FakePort { param($p, $r) Add-Response $p $r (New-ImuPayload 1 0 3 2) }
+$legacy = Get-DeviceImu (New-SerialClient $fake)
+Assert-True ($legacy.RangeG -eq 2 -and $legacy.Xg -eq -2 -and $legacy.Yg -eq (8191 / 4096.0) -and $legacy.Zg -eq -1) 'Legacy 2g firmware remains compatible'
 foreach ($invalid in @('length', 'flags', 'range', 'status', 'raw', 'rate', 'freshness')) {
     $script:invalidImu = $invalid
     $fake = New-FakePort {
@@ -58,7 +61,7 @@ try {
     [Threading.Thread]::CurrentThread.CurrentCulture = $previousCulture
 }
 Assert-True ($lines.Count -eq 5 -and $fake.Requests.Count -eq 6) 'Continuous stream skips duplicate sequences and startup state'
-Assert-True ($lines[1] -match ',-2\.000000,1\.999756,-1\.000000,5,0,0,0$') 'CSV uses invariant culture and g values'
+Assert-True ($lines[1] -match ',-8\.000000,7\.999023,-4\.000000,5,0,0,0$') 'CSV uses invariant culture and 8g values'
 Assert-True ($lines[3].StartsWith('0,') -and $lines[3].EndsWith(',0')) 'Sequence rollover is continuous'
 Assert-True ($lines[4].StartsWith('2,') -and $lines[4].EndsWith(',1')) 'Host sample gaps are reported'
 
