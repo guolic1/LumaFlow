@@ -44,6 +44,10 @@ endif()
 enable_testing()
 add_executable(fluid_sim_test fluid_sim_test.c ../application/fluid_sim.c)
 target_include_directories(fluid_sim_test PRIVATE ../application)
+# Exact trajectory assertions use calibrated coefficients; production tuning is
+# exercised separately by fluid_effect_test and the coefficient variants below.
+target_compile_definitions(fluid_sim_test PRIVATE FLUID_ACCEL_DIVISOR=32
+    FLUID_VELOCITY_RETAIN_Q8=252 FLUID_WALL_RESTITUTION_Q8=32 FLUID_SURFACE_TENSION_Q8=3)
 if(MSVC)
     target_compile_options(fluid_sim_test PRIVATE /W4 /WX)
 else()
