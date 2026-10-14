@@ -189,16 +189,20 @@ static void test_sequence_wrap_and_failure(void)
 
 static void test_8g_physical_thresholds(void)
 {
+    reset(0U, 0, 0, 1024);
+    quiet_for(30000U, 511, 0, 1024); /* just below 0.5g remains quiet */
+    assert(motion_sleep_is_sleeping());
+
     reset(0U, 0, 0, 1024); /* +1g at the new 1024 LSB/g sensitivity */
     quiet_for(20000U, 0, 0, 1024);
-    feed(20000U, 103, 0, 1024); /* first representable change at or above 0.1g */
-    quiet_for(10000U, 103, 0, 1024);
+    feed(20000U, 512, 0, 1024); /* exactly 0.5g resets the quiet timer */
+    quiet_for(10000U, 512, 0, 1024);
     assert(!motion_sleep_is_sleeping());
-    quiet_for(20000U, 103, 0, 1024);
+    quiet_for(20000U, 512, 0, 1024);
     assert(motion_sleep_is_sleeping());
-    feed(now_ms + 10U, 103 + 511, 0, 1024);
+    feed(now_ms + 10U, 512 + 2047, 0, 1024);
     assert(motion_sleep_is_sleeping());
-    feed(now_ms + 10U, 103 + 512, 0, 1024); /* exactly 0.5g from the reference */
+    feed(now_ms + 10U, 512 + 2048, 0, 1024); /* exactly 2g from the reference */
     assert(!motion_sleep_is_sleeping());
 }
 
