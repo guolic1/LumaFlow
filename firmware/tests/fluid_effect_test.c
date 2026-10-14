@@ -10,6 +10,36 @@
 #include "motion_sleep.h"
 #include "motion_sleep_config.h"
 
+static bool imu_monitoring, irq_motion, uart_running = true;
+
+bool imu_set_motion_sleep(bool sleeping, uint16_t threshold_mg)
+{
+    assert(!sleeping || threshold_mg == MOTION_SLEEP_WAKE_THRESHOLD_MG);
+    imu_monitoring = sleeping;
+    return true;
+}
+bool imu_check_motion_wake(bool *motion)
+{
+    assert(imu_monitoring);
+    *motion = irq_motion;
+    irq_motion = false;
+    return true;
+}
+void serial_uart_flush(void)
+{
+    assert(uart_running);
+}
+void serial_uart_deinit(void)
+{
+    assert(uart_running && imu_monitoring);
+    uart_running = false;
+}
+void serial_uart_init(void)
+{
+    assert(!uart_running && !imu_monitoring);
+    uart_running = true;
+}
+
 static imu_snapshot_t sample;
 static uint32_t ticks, microseconds;
 static bool display_accepts;
@@ -82,6 +112,8 @@ static void at_time(uint32_t now_us)
 
 static void reset(void)
 {
+    imu_monitoring = irq_motion = false;
+    uart_running = true;
     sample = (imu_snapshot_t){0};
     at_time(0U);
     display_accepts = true;
@@ -214,6 +246,7 @@ static void test_motion_sleep_integration(void)
         assert(display_running == (tick < sleep_tick));
     }
     unsigned completed = stats().completed_steps;
+    assert(imu_monitoring && !uart_running);
     assert(completed == MOTION_SLEEP_IDLE_MS / 40U - 1U && stats().missed_steps == 0U);
     unsigned count = submissions;
     bool saved[217];
@@ -222,6 +255,10 @@ static void test_motion_sleep_integration(void)
     {
         at_time(tick * 10000U);
         sample.sample.x = MOTION_SLEEP_WAKE_THRESHOLD_RAW;
+        if (tick == sleep_tick + 501U)
+        {
+            irq_motion = true;
+        }
         ++sample.sequence;
         for (unsigned poll = 0U; poll < 60U; ++poll)
         {
@@ -229,6 +266,7 @@ static void test_motion_sleep_integration(void)
             fluid_effect_poll();
         }
         assert(!motion_sleep_is_sleeping() && display_running);
+        assert(!imu_monitoring && uart_running);
         if (tick == sleep_tick + 501U)
         {
             assert(submissions == count + 1U);

@@ -53,6 +53,8 @@ pwsh -NoProfile -File scripts/imu.ps1 -Help
 先检查当前镜像及 GET_IMU 能力，Bootloader 或旧 Application 会报错，不自动切换镜像。
 支持 `-BaudRate`、`-TimeoutMs`、`-Verbose`、`-Help` / `-h`；串口等待行为与通用工具一致。
 
+设备进入 Stop1 后关闭串口，持续读取会超时退出；摇晃唤醒设备后重新运行脚本。
+
 CSV 列为 `sequence,timestamp_ms,x_g,y_g,z_g,new_data,read_errors,missed_ticks,host_skipped`。
 XYZ 单位为 g，当前固件量程为 ±8g；脚本按设备上报的量程换算，也兼容旧 ±2g 固件。`new_data` 的 bit0/1/2 分别表示 X/Y/Z 自上次读取后更新。
 序号对每次成功的设备读取递增，因此 NEWDATA=0 的记录仍可能出现。时间戳为设备读取开始时的毫秒数。

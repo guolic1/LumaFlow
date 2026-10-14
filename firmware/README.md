@@ -59,10 +59,11 @@ OTA 仅接受 Application 原始 BIN。Bootloader 自动写入校验元数据；
 ## 运行功能
 
 - LED：217 颗查理复用 LED，每帧 161 个时隙，TIM14 刷新约 120Hz，双缓冲，无灰度。
-- IMU：QMA6100P，I2C 地址 `0x12`，±8g（1024 LSB/g）；TIM3 每 10ms 调度主循环读取，不使用 IMU 外部中断。
+- IMU：QMA6100P，I2C 地址 `0x12`，±8g（1024 LSB/g）；运行时由 TIM3 每 10ms 调度主循环读取，休眠时使用运动中断唤醒。
 - 液体：默认运行 64 粒子、13×13 网格的定点 PIC/FLIP，目标 25Hz；IMU 无效或数据过期时暂停运动。实际计算耗时通过 `fluid` 命令查询。
 - 坐标：LED 位号从右向左、从下向上增加；IMU X 向右、Y 向下。
-- 休眠：各轴相对参考值的加速度变化均小于 0.5g 持续 30 秒后关闭 LED、暂停液体，MCU 进入普通 Sleep；保留 100Hz IMU 采样和串口，任一轴变化达到 2g 时恢复。阈值与超时在 `application/motion_sleep_config.h` 调节。
+- 休眠：各轴相对参考值的变化均小于 0.5g 持续 30 秒后进入 Stop1，关闭 LED、计算、TIM3 和串口；IMU 以 25Hz 检测相邻样本变化，任一轴达到 2g 后经 INT1→PA0 唤醒，恢复 64MHz、100Hz 采集及串口。阈值在 `application/motion_sleep_config.h`、休眠采样率在 `application/imu.h` 调节。
+- Stop 期间时间戳由 RTC/LSI 补偿，精度受内部 LSI 误差影响；液体状态保留，休眠时间不计入漏采或漏模拟步数。
 
 液体效果参数集中在 `application/fluid_config.h`，修改后重新构建 Application。
 

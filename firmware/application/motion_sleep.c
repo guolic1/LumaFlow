@@ -8,6 +8,7 @@
 #include "imu_platform.h"
 #include "led_matrix.h"
 #include "motion_sleep_config.h"
+#include "serial_uart.h"
 
 _Static_assert(MOTION_SLEEP_IDLE_MS > 0U && MOTION_SLEEP_IDLE_MS <= INT32_MAX &&
                    MOTION_SLEEP_MAX_SAMPLE_GAP_MS > 0U &&
@@ -15,8 +16,8 @@ _Static_assert(MOTION_SLEEP_IDLE_MS > 0U && MOTION_SLEEP_IDLE_MS <= INT32_MAX &&
                "Motion sleep timing must fit wrap-safe comparisons");
 _Static_assert(MOTION_SLEEP_QUIET_THRESHOLD_RAW > 0 &&
                    MOTION_SLEEP_WAKE_THRESHOLD_RAW >= MOTION_SLEEP_QUIET_THRESHOLD_RAW &&
-                   MOTION_SLEEP_WAKE_THRESHOLD_RAW <= INT16_MAX,
-               "Wake threshold must be at least the quiet threshold");
+                   MOTION_SLEEP_WAKE_THRESHOLD_RAW <= 255U * 16U,
+               "Wake threshold must fit the sensor's 8-bit motion threshold");
 
 static struct
 {
@@ -43,12 +44,14 @@ static bool wake(void)
 {
     if (activity.sleeping)
     {
-        if (!led_matrix_init())
+        if (!imu_set_motion_sleep(false, 0U) || !led_matrix_init())
         {
             return false;
         }
+        serial_uart_init();
         fluid_effect_set_paused(false);
         activity.sleeping = false;
+        activity.have_reference = false; /* Anchor the first fresh 100Hz sample after wake. */
     }
     return true;
 }
@@ -65,6 +68,15 @@ void motion_sleep_init(void)
 
 bool motion_sleep_poll(void)
 {
+    if (activity.sleeping)
+    {
+        bool motion;
+        if (!imu_check_motion_wake(&motion) || motion)
+        {
+            return wake();
+        }
+        return true; /* Stale/absent CPU samples are expected while the detector runs alone. */
+    }
     imu_snapshot_t snapshot;
     imu_get_snapshot(&snapshot);
     bool healthy = snapshot.ready && snapshot.valid && snapshot.status == IMU_OK &&
@@ -88,8 +100,7 @@ bool motion_sleep_poll(void)
     }
     activity.sequence = snapshot.sequence;
     activity.last_sample_ms = snapshot.timestamp_ms;
-    int32_t threshold = activity.sleeping ? (int32_t)MOTION_SLEEP_WAKE_THRESHOLD_RAW
-                                          : (int32_t)MOTION_SLEEP_QUIET_THRESHOLD_RAW;
+    int32_t threshold = (int32_t)MOTION_SLEEP_QUIET_THRESHOLD_RAW;
     /* Keep the reference fixed until motion: slow tilts accumulate, instead of
      * disappearing when comparing only adjacent 100Hz measurements. */
     if (absolute((int32_t)snapshot.sample.x - activity.x) >= threshold ||
@@ -102,8 +113,14 @@ bool motion_sleep_poll(void)
     if (!activity.sleeping &&
         (uint32_t)(snapshot.timestamp_ms - activity.last_motion_ms) >= MOTION_SLEEP_IDLE_MS)
     {
+        if (!imu_set_motion_sleep(true, MOTION_SLEEP_WAKE_THRESHOLD_MG))
+        {
+            return false;
+        }
         fluid_effect_set_paused(true);
         led_matrix_stop();
+        serial_uart_flush();
+        serial_uart_deinit();
         activity.sleeping = true;
     }
     return true;

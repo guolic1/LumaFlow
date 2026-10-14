@@ -5,6 +5,7 @@
 #include "fluid_effect.h"
 #include "i2c.h"
 #include "imu.h"
+#include "imu_platform.h"
 #include "led_matrix.h"
 #include "motion_sleep.h"
 #include "serial_uart.h"
@@ -45,7 +46,10 @@ int main(void)
     while (1)
     {
         imu_poll();
-        command_server_poll(&command_server);
+        if (!motion_sleep_is_sleeping())
+        {
+            command_server_poll(&command_server);
+        }
 
         if (application_commands_take_bootloader_request())
         {
@@ -54,18 +58,22 @@ int main(void)
             serial_uart_flush();
             NVIC_SystemReset();
         }
+        bool was_sleeping = motion_sleep_is_sleeping();
         if (!motion_sleep_poll())
         {
             Error_Handler();
         }
+        if (was_sleeping && !motion_sleep_is_sleeping())
+        {
+            application_commands_init(&command_server); /* Discard any pre-sleep partial frame. */
+        }
         fluid_effect_poll();
         if (motion_sleep_is_sleeping())
         {
-            /* TIM3 and UART/DMA stay clocked in normal Sleep. Keep acquiring the
-             * IMU in the main loop after each interrupt; Stop would halt TIM3. */
-            LL_LPM_EnableSleep();
-            __DSB();
-            __WFI();
+            if (!imu_platform_enter_stop())
+            {
+                Error_Handler();
+            }
         }
     }
 }

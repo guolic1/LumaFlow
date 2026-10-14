@@ -4,6 +4,7 @@
 #include "qma6100p.h"
 
 #define IMU_SAMPLE_RATE_HZ 100U
+#define IMU_SLEEP_SAMPLE_RATE_HZ 25U /* Motion detector only; supported: 25, 50, 100. */
 #define IMU_RANGE_G QMA6100P_RANGE_G
 #define IMU_COUNTS_PER_G QMA6100P_COUNTS_PER_G
 
@@ -29,10 +30,14 @@ typedef struct
     bool ready;
 } imu_snapshot_t;
 
-/* Main-loop-only API; TIM3 only schedules work, I2C executes in imu_poll(). */
+/* Main-loop-only API; interrupts only flag work, all I2C executes in these APIs. */
 void imu_init(void);
 void imu_poll(void);
 void imu_stop(void);
 void imu_get_snapshot(imu_snapshot_t *snapshot);
+/* Suspend host sampling, leaving the sensor's low-rate motion detector active.
+ * The snapshot becomes invalid/IMU_STOPPED until fresh sampling resumes. */
+bool imu_set_motion_sleep(bool sleeping, uint16_t threshold_mg);
+bool imu_check_motion_wake(bool *motion);
 
 #endif

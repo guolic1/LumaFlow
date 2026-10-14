@@ -10,7 +10,43 @@
 static imu_snapshot_t sample;
 static uint32_t now_ms;
 static bool display_running, paused, restart_ok;
+static bool imu_sleeping, irq_motion, wake_check_ok, arm_ok, uart_running;
 static unsigned stops, starts;
+
+bool imu_set_motion_sleep(bool value, uint16_t threshold_mg)
+{
+    if (value)
+    {
+        assert(threshold_mg == 2000U && !paused && display_running && uart_running);
+        if (!arm_ok)
+        {
+            return false;
+        }
+    }
+    imu_sleeping = value;
+    return true;
+}
+bool imu_check_motion_wake(bool *motion)
+{
+    assert(imu_sleeping);
+    *motion = irq_motion;
+    irq_motion = false;
+    return wake_check_ok;
+}
+void serial_uart_flush(void)
+{
+    assert(uart_running);
+}
+void serial_uart_deinit(void)
+{
+    assert(uart_running && imu_sleeping && paused && !display_running);
+    uart_running = false;
+}
+void serial_uart_init(void)
+{
+    assert(!uart_running && !imu_sleeping && display_running);
+    uart_running = true;
+}
 
 void imu_get_snapshot(imu_snapshot_t *snapshot)
 {
@@ -57,6 +93,8 @@ static void reset(uint32_t start, int16_t x, int16_t y, int16_t z)
     display_running = true;
     paused = false;
     restart_ok = true;
+    imu_sleeping = irq_motion = false;
+    wake_check_ok = arm_ok = uart_running = true;
     stops = starts = 0U;
     motion_sleep_init();
     feed(start, x, y, z);
@@ -93,27 +131,24 @@ static void test_static_orientations(void)
     }
 }
 
-static void test_wake_all_axes(void)
+static void test_interrupt_wake(void)
 {
-    for (unsigned axis = 0U; axis < 3U; ++axis)
-    {
-        for (int sign = -1; sign <= 1; sign += 2)
-        {
-            reset(0U, 0, 0, IMU_COUNTS_PER_G);
-            quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, IMU_COUNTS_PER_G);
-            int16_t a[3] = {0, 0, IMU_COUNTS_PER_G};
-            a[axis] += (int16_t)(sign * (MOTION_SLEEP_WAKE_THRESHOLD_RAW - 1));
-            feed(now_ms + 10U, a[0], a[1], a[2]);
-            assert(motion_sleep_is_sleeping() && starts == 0U);
-            a[axis] += (int16_t)sign;
-            feed(now_ms + 10U, a[0], a[1], a[2]);
-            assert(!motion_sleep_is_sleeping() && display_running && !paused && starts == 1U);
-            quiet_for(MOTION_SLEEP_IDLE_MS - 10U, a[0], a[1], a[2]);
-            assert(!motion_sleep_is_sleeping());
-            feed(now_ms + 10U, a[0], a[1], a[2]);
-            assert(motion_sleep_is_sleeping() && stops == 2U);
-        }
-    }
+    reset(0U, 0, 0, IMU_COUNTS_PER_G);
+    quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, IMU_COUNTS_PER_G);
+    assert(imu_sleeping && !uart_running);
+    sample.valid = false; /* No CPU sampling while sleeping, including a long interval. */
+    now_ms += 3600000U;
+    assert(motion_sleep_poll() && motion_sleep_is_sleeping());
+    irq_motion = true; /* Short impulse already ended; no new raw sample is required. */
+    assert(motion_sleep_poll());
+    assert(!motion_sleep_is_sleeping() && uart_running && display_running && !paused &&
+           starts == 1U);
+    sample.valid = true;
+    feed(now_ms + 10U, 0, 0, IMU_COUNTS_PER_G);
+    quiet_for(MOTION_SLEEP_IDLE_MS - 10U, 0, 0, IMU_COUNTS_PER_G);
+    assert(!motion_sleep_is_sleeping());
+    feed(now_ms + 10U, 0, 0, IMU_COUNTS_PER_G);
+    assert(motion_sleep_is_sleeping() && stops == 2U);
 }
 
 static void test_motion_and_noise(void)
@@ -151,9 +186,10 @@ static void test_invalid_and_missing_samples(void)
     feed(now_ms, 0, 0, IMU_COUNTS_PER_G);
     quiet_for(MOTION_SLEEP_IDLE_MS, 0, 0, IMU_COUNTS_PER_G);
     assert(motion_sleep_is_sleeping());
-    sample.status = IMU_BUS_ERROR;
+    wake_check_ok = false; /* A failed sensor interrupt read recovers the running mode. */
     assert(motion_sleep_poll());
-    assert(!motion_sleep_is_sleeping() && !paused && display_running);
+    assert(!motion_sleep_is_sleeping() && !paused && display_running && uart_running);
+    wake_check_ok = true;
     sample.status = IMU_OK;
     feed(now_ms + 10U, 0, 0, IMU_COUNTS_PER_G);
     quiet_for(MOTION_SLEEP_IDLE_MS - 10U, 0, 0, IMU_COUNTS_PER_G);
@@ -173,7 +209,8 @@ static void test_sequence_wrap_and_failure(void)
     sample.sample.x = MOTION_SLEEP_WAKE_THRESHOLD_RAW;
     assert(motion_sleep_poll()); /* Same sequence is not a newly acquired measurement. */
     assert(motion_sleep_is_sleeping());
-    feed(now_ms + 10U, MOTION_SLEEP_WAKE_THRESHOLD_RAW, 0, IMU_COUNTS_PER_G);
+    irq_motion = true;
+    assert(motion_sleep_poll());
     assert(!motion_sleep_is_sleeping());
 
     reset(0U, 0, 0, IMU_COUNTS_PER_G);
@@ -183,6 +220,7 @@ static void test_sequence_wrap_and_failure(void)
     sample.timestamp_ms = now_ms;
     sample.sample.x = MOTION_SLEEP_WAKE_THRESHOLD_RAW;
     ++sample.sequence;
+    irq_motion = true;
     assert(!motion_sleep_poll());
     assert(motion_sleep_is_sleeping() && paused && !display_running);
 }
@@ -200,20 +238,34 @@ static void test_8g_physical_thresholds(void)
     assert(!motion_sleep_is_sleeping());
     quiet_for(20000U, 512, 0, 1024);
     assert(motion_sleep_is_sleeping());
-    feed(now_ms + 10U, 512 + 2047, 0, 1024);
+    feed(now_ms + 10U, 512 + 2048, 0, 1024); /* Cached values cannot replace a hardware event. */
     assert(motion_sleep_is_sleeping());
-    feed(now_ms + 10U, 512 + 2048, 0, 1024); /* exactly 2g from the reference */
+    irq_motion = true;
+    assert(motion_sleep_poll());
     assert(!motion_sleep_is_sleeping());
+}
+
+static void test_arm_failure(void)
+{
+    reset(0U, 0, 0, IMU_COUNTS_PER_G);
+    quiet_for(MOTION_SLEEP_IDLE_MS - 10U, 0, 0, IMU_COUNTS_PER_G);
+    arm_ok = false;
+    now_ms += 10U;
+    sample.timestamp_ms = now_ms;
+    ++sample.sequence;
+    assert(!motion_sleep_poll());
+    assert(!motion_sleep_is_sleeping() && display_running && !paused && uart_running);
 }
 
 int main(void)
 {
     test_8g_physical_thresholds();
     test_static_orientations();
-    test_wake_all_axes();
+    test_interrupt_wake();
     test_motion_and_noise();
     test_invalid_and_missing_samples();
     test_sequence_wrap_and_failure();
+    test_arm_failure();
     puts("Motion sleep, wake and fault handling passed");
     return 0;
 }

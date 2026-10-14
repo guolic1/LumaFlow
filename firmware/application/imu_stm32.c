@@ -1,6 +1,7 @@
 #include "imu_platform.h"
 
 #include "main.h"
+#include "motion_rtc.h"
 
 #define IMU_ADDRESS (0x12U << 1U)
 #define TIMER_PERIOD_US 10000U
@@ -10,6 +11,89 @@
     (I2C_ICR_NACKCF | I2C_ICR_STOPCF | I2C_ICR_BERRCF | I2C_ICR_ARLOCF | I2C_ICR_OVRCF)
 
 static volatile uint32_t timer_ticks;
+static volatile bool motion_irq;
+static bool wake_enabled, sampling_enabled;
+static uint32_t slept_ms;
+
+extern void SystemClock_Config(void);
+
+static bool wait_register(volatile uint32_t *reg, uint32_t mask)
+{
+    /* Bounded even when TIM3 is suspended during clock/RTC restoration. */
+    for (uint32_t attempts = 0U; attempts < 1000000U; ++attempts)
+    {
+        if ((*reg & mask) == mask)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool rtc_sync(void)
+{
+    RTC->WPR = 0xCAU;
+    RTC->WPR = 0x53U;
+    RTC->ICSR &= ~RTC_ICSR_RSF;
+    RTC->WPR = 0xFFU;
+    return wait_register(&RTC->ICSR, RTC_ICSR_RSF);
+}
+
+static bool rtc_start(void)
+{
+    LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR | LL_APB1_GRP1_PERIPH_RTC);
+    LL_PWR_EnableBkUpAccess();
+    if (!wait_register(&PWR->CR1, PWR_CR1_DBP))
+    {
+        return false;
+    }
+    LL_RCC_LSI_Enable();
+    if (!wait_register(&RCC->CSR, RCC_CSR_LSIRDY))
+    {
+        return false;
+    }
+    uint32_t source = LL_RCC_GetRTCClockSource();
+    if (source != LL_RCC_RTC_CLKSOURCE_NONE && source != LL_RCC_RTC_CLKSOURCE_LSI)
+    {
+        return false; /* Do not reset an independently configured backup domain. */
+    }
+    LL_RCC_SetRTCClockSource(LL_RCC_RTC_CLKSOURCE_LSI);
+    LL_RCC_EnableRTC();
+    const uint32_t prescaler = (31U << RTC_PRER_PREDIV_A_Pos) | 999U; /* Nominal LSI=32kHz. */
+    if ((RTC->ICSR & RTC_ICSR_INITS) == 0U)
+    {
+        RTC->WPR = 0xCAU;
+        RTC->WPR = 0x53U;
+        RTC->ICSR |= RTC_ICSR_INIT;
+        if (!wait_register(&RTC->ICSR, RTC_ICSR_INITF))
+        {
+            RTC->WPR = 0xFFU;
+            return false;
+        }
+        RTC->CR = 0U; /* 24-hour shadow mode; no alarms or periodic wake interrupts. */
+        RTC->PRER = 999U;
+        RTC->PRER |=
+            31U << RTC_PRER_PREDIV_A_Pos; /* ST sequence: synchronous, then asynchronous. */
+        RTC->TR = 0U;
+        RTC->DR = 0x0000C101U; /* 2000-01-01, Saturday. */
+        RTC->ICSR &= ~RTC_ICSR_INIT;
+        RTC->WPR = 0xFFU;
+    }
+    if (RTC->PRER != prescaler || RTC->CR != 0U)
+    {
+        return false;
+    }
+    return rtc_sync();
+}
+
+static uint32_t rtc_now_ms(void)
+{
+    /* Reading SSR locks the shadow calendar until DR is read, including midnight. */
+    uint32_t subseconds = RTC->SSR;
+    uint32_t time = RTC->TR;
+    uint32_t date = RTC->DR;
+    return motion_rtc_ms(subseconds, time, date);
+}
 
 bool imu_platform_start(void)
 {
@@ -25,16 +109,24 @@ bool imu_platform_start(void)
     TIM3->EGR = TIM_EGR_UG;
     TIM3->SR = 0U;
     timer_ticks = 0U;
+    slept_ms = 0U;
+    sampling_enabled = true;
     TIM3->DIER = TIM_DIER_UIE;
     NVIC_ClearPendingIRQ(TIM3_IRQn);
     NVIC_SetPriority(TIM3_IRQn, 2U);
     NVIC_EnableIRQ(TIM3_IRQn);
     TIM3->CR1 = TIM_CR1_CEN;
+    if (!rtc_start())
+    {
+        imu_platform_stop();
+        return false;
+    }
     return true;
 }
 
 void imu_platform_stop(void)
 {
+    imu_platform_enable_motion_wake(false);
     NVIC_DisableIRQ(TIM3_IRQn);
     __DSB();
     __ISB();
@@ -43,6 +135,110 @@ void imu_platform_stop(void)
     TIM3->SR = 0U;
     NVIC_ClearPendingIRQ(TIM3_IRQn);
     LL_APB1_GRP1_DisableClock(LL_APB1_GRP1_PERIPH_TIM3);
+    sampling_enabled = false;
+}
+
+void imu_platform_set_sampling(bool enabled)
+{
+    if (enabled == sampling_enabled)
+    {
+        return;
+    }
+    NVIC_DisableIRQ(TIM3_IRQn);
+    TIM3->CR1 = 0U;
+    if ((TIM3->SR & TIM_SR_UIF) != 0U)
+    {
+        ++timer_ticks;
+    }
+    TIM3->SR = 0U;
+    NVIC_ClearPendingIRQ(TIM3_IRQn);
+    TIM3->DIER = enabled ? TIM_DIER_UIE : 0U;
+    sampling_enabled = enabled;
+    if (enabled)
+    {
+        NVIC_EnableIRQ(TIM3_IRQn);
+        TIM3->CR1 = TIM_CR1_CEN;
+    }
+}
+
+void imu_platform_enable_motion_wake(bool enabled)
+{
+    NVIC_DisableIRQ(EXTI0_1_IRQn);
+    LL_EXTI_DisableIT_0_31(LL_EXTI_LINE_0);
+    LL_EXTI_ClearRisingFlag_0_31(LL_EXTI_LINE_0);
+    LL_EXTI_ClearFallingFlag_0_31(LL_EXTI_LINE_0);
+    NVIC_ClearPendingIRQ(EXTI0_1_IRQn);
+    motion_irq = false;
+    wake_enabled = enabled;
+    if (enabled)
+    {
+        LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOA);
+        LL_EXTI_SetEXTISource(LL_EXTI_CONFIG_PORTA, LL_EXTI_CONFIG_LINE0);
+        LL_GPIO_SetPinMode(IMU_INT_GPIO_Port, IMU_INT_Pin, LL_GPIO_MODE_INPUT);
+        LL_GPIO_SetPinPull(IMU_INT_GPIO_Port, IMU_INT_Pin, LL_GPIO_PULL_NO);
+        LL_EXTI_DisableFallingTrig_0_31(LL_EXTI_LINE_0);
+        LL_EXTI_EnableRisingTrig_0_31(LL_EXTI_LINE_0);
+        LL_EXTI_EnableIT_0_31(LL_EXTI_LINE_0);
+        NVIC_SetPriority(EXTI0_1_IRQn, 2U);
+        NVIC_EnableIRQ(EXTI0_1_IRQn);
+    }
+}
+
+void EXTI0_1_IRQHandler(void)
+{
+    if (LL_EXTI_IsActiveRisingFlag_0_31(LL_EXTI_LINE_0))
+    {
+        LL_EXTI_ClearRisingFlag_0_31(LL_EXTI_LINE_0);
+        motion_irq = wake_enabled;
+    }
+}
+
+bool imu_platform_motion_pending(void)
+{
+    /* Checking the latched pin level also covers an edge during EXTI setup. */
+    return wake_enabled && (motion_irq || LL_GPIO_IsInputPinSet(IMU_INT_GPIO_Port, IMU_INT_Pin));
+}
+
+void imu_platform_clear_motion(void)
+{
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    motion_irq = false;
+    __set_PRIMASK(primask);
+}
+
+bool imu_platform_enter_stop(void)
+{
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    bool ok = wake_enabled && !sampling_enabled;
+    /* Masking interrupts closes the check-to-WFI race. A pending EXTI wakes WFI;
+     * its handler runs only after the PLL and flash clock have been restored. */
+    if (ok && !imu_platform_motion_pending())
+    {
+        uint32_t before = rtc_now_ms();
+        uint32_t systick_control = SysTick->CTRL;
+        SysTick->CTRL = 0U;
+        LL_PWR_SetPowerMode(LL_PWR_MODE_STOP1);
+        LL_LPM_EnableDeepSleep();
+        __DSB();
+        __WFI();
+        LL_LPM_EnableSleep();
+        if (LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_PLL)
+        {
+            SystemClock_Config();
+        }
+        /* An IRQ already pending at WFI can abort entry without stopping the PLL.
+         * Never reconfigure a running PLL in that case. */
+        SysTick->CTRL = systick_control;
+        ok = rtc_sync();
+        if (ok)
+        {
+            slept_ms += rtc_now_ms() - before;
+        }
+    }
+    __set_PRIMASK(primask);
+    return ok;
 }
 
 void TIM3_IRQHandler(void)
@@ -77,7 +273,7 @@ static uint32_t timer_now(bool milliseconds)
 
 uint32_t imu_platform_time_ms(void)
 {
-    return timer_now(true);
+    return timer_now(true) + slept_ms;
 }
 
 uint32_t imu_platform_time_us(void)

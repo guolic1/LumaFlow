@@ -11,15 +11,36 @@ static unsigned reads;
 static bool bus_ok;
 static bool timer_ok;
 static bool timer_running;
+static bool sampling_enabled, motion_armed, motion_pending, interrupt_on_arm;
+
+void imu_platform_set_sampling(bool enabled)
+{
+    sampling_enabled = enabled;
+}
+void imu_platform_enable_motion_wake(bool enabled)
+{
+    motion_armed = enabled;
+    motion_pending = false;
+}
+bool imu_platform_motion_pending(void)
+{
+    return motion_pending;
+}
+void imu_platform_clear_motion(void)
+{
+    motion_pending = false;
+}
 
 bool imu_platform_start(void)
 {
     timer_running = timer_ok;
+    sampling_enabled = timer_ok;
     return timer_ok;
 }
 void imu_platform_stop(void)
 {
     timer_running = false;
+    sampling_enabled = false;
 }
 uint32_t imu_platform_ticks(void)
 {
@@ -35,6 +56,7 @@ void imu_platform_delay_ms(uint32_t duration)
 }
 bool imu_platform_read(uint8_t reg, uint8_t *data, uint8_t length)
 {
+    assert(sampling_enabled); /* Every I2C operation must retain its timeout clock. */
     if (reg == 1U)
     {
         ++reads;
@@ -44,15 +66,26 @@ bool imu_platform_read(uint8_t reg, uint8_t *data, uint8_t length)
         return false;
     }
     memcpy(data, &registers[reg], length);
+    if (reg == 0x09U)
+    {
+        registers[reg] = 0U;
+    }
     return true;
 }
 bool imu_platform_write(uint8_t reg, uint8_t value)
 {
+    assert(sampling_enabled);
     if (!bus_ok)
     {
         return false;
     }
     registers[reg] = value;
+    if (reg == 0x18U && (value & 7U) == 7U && interrupt_on_arm)
+    {
+        assert(motion_armed);
+        motion_pending = true;
+        registers[0x09] = 1U;
+    }
     return true;
 }
 
@@ -97,11 +130,50 @@ int main(void)
     imu_poll();
     imu_get_snapshot(&snapshot);
     assert(snapshot.status == IMU_OK && snapshot.sequence == 3U && snapshot.read_errors == 1U);
+    uint32_t before_sequence = snapshot.sequence;
+    uint32_t before_missed = snapshot.missed_ticks;
+    unsigned before_reads = reads;
+    interrupt_on_arm = true;
+    assert(imu_set_motion_sleep(true, 2000U));
+    assert(motion_armed && !sampling_enabled && registers[0x10] == 0x06U);
+    imu_get_snapshot(&snapshot);
+    assert(snapshot.ready && !snapshot.valid && snapshot.status == IMU_STOPPED);
+    ticks += 30000U;
+    imu_poll();
+    assert(reads == before_reads); /* No data polling during the suspended interval. */
+    bool motion = false;
+    assert(imu_check_motion_wake(&motion) && motion && !motion_pending);
+    assert(imu_set_motion_sleep(false, 0U));
+    assert(!motion_armed && sampling_enabled && registers[0x10] == 0U);
+    imu_poll();
+    assert(reads == before_reads); /* Rebase scheduling; sleep is not a missed sample. */
+    ++ticks;
+    imu_poll();
+    imu_get_snapshot(&snapshot);
+    assert(snapshot.valid && snapshot.sequence == before_sequence + 1U);
+    assert(snapshot.missed_ticks == before_missed && snapshot.timestamp_ms == ticks * 10U + 1U);
+    interrupt_on_arm = false;
+    assert(imu_set_motion_sleep(true, 2000U));
+    motion_pending = true; /* EXTI noise with no latched sensor source is ignored. */
+    assert(imu_check_motion_wake(&motion) && !motion && !motion_pending);
+    bus_ok = false;
+    assert(imu_check_motion_wake(&motion) && !motion); /* No IRQ means no I2C access. */
+    motion_pending = true;
+    assert(!imu_check_motion_wake(&motion));
+    imu_get_snapshot(&snapshot);
+    assert(snapshot.status == IMU_BUS_ERROR && snapshot.read_errors == 2U);
+    assert(!imu_set_motion_sleep(false, 0U)); /* Restoration errors remain visible to the caller. */
+    bus_ok = true;
+    assert(imu_set_motion_sleep(false, 0U));
+    assert(!imu_set_motion_sleep(true, 4000U) && sampling_enabled && !motion_armed);
+    imu_get_snapshot(&snapshot);
+    assert(snapshot.status == IMU_CONFIG_ERROR);
     imu_stop();
     ++ticks;
     imu_poll();
     imu_get_snapshot(&snapshot);
-    assert(!timer_running && !snapshot.ready && snapshot.status == IMU_STOPPED && reads == 4U);
+    assert(!timer_running && !motion_armed && !snapshot.ready && snapshot.status == IMU_STOPPED);
+    assert(reads == before_reads + 1U);
     bus_ok = false;
     imu_init();
     imu_poll();

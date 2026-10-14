@@ -4,8 +4,8 @@
 #include "imu.h"
 
 #define MOTION_SLEEP_IDLE_MS 30000U
-/* Thresholds in mg; round up to native counts (512 and 2048 at +/-8g).
- * Compare each axis against the last motion reference, not zero/gravity. */
+/* Quiet: each axis against the last motion reference, not zero/gravity.
+ * Wake: hardware adjacent-sample change, quantized in 16 native counts. */
 #define MOTION_SLEEP_QUIET_THRESHOLD_MG 500U
 #define MOTION_SLEEP_WAKE_THRESHOLD_MG 2000U
 #define MOTION_SLEEP_QUIET_THRESHOLD_RAW                                                           \
