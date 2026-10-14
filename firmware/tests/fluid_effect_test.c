@@ -85,6 +85,85 @@ static void finish(unsigned target)
     }
 }
 
+static void test_pause_resume(void)
+{
+    bool expected[217], before_sleep[217];
+    reset();
+    sample.sample.y = 0;
+    at_time(40000U);
+    finish(1U);
+    /* A fresh force window, without a pause, supplies the reference trajectory. */
+    sample.status = IMU_BUS_ERROR;
+    fluid_effect_poll();
+    healthy();
+    sample.sample.x = 0;
+    ++sample.sequence;
+    fluid_effect_poll();
+    at_time(80000U);
+    sample.sample.x = 0;
+    ++sample.sequence;
+    finish(2U);
+    memcpy(expected, displayed, sizeof(expected));
+
+    reset();
+    sample.sample.y = 0;
+    at_time(40000U);
+    finish(1U);
+    memcpy(before_sleep, displayed, sizeof(before_sleep));
+    unsigned count = submissions;
+    fluid_effect_set_paused(true);
+    at_time(31040000U);
+    sample.sample.x = 8191;
+    sample.sample.y = -8192;
+    ++sample.sequence;
+    for (unsigned i = 0U; i < 100U; ++i)
+    {
+        fluid_effect_poll();
+    }
+    assert(stats().completed_steps == 1U && stats().missed_steps == 0U);
+    assert(submissions == count && memcmp(before_sleep, displayed, sizeof(displayed)) == 0);
+    fluid_effect_set_paused(true); /* idempotent */
+    sample.sample.x = 0;
+    sample.sample.y = 0;
+    ++sample.sequence;
+    fluid_effect_set_paused(false);
+    fluid_effect_poll();
+    assert(stats().completed_steps == 1U && stats().missed_steps == 0U);
+    assert(submissions == count + 1U && memcmp(before_sleep, displayed, sizeof(displayed)) == 0);
+    at_time(31080000U);
+    sample.sample.x = 0;
+    ++sample.sequence;
+    finish(2U);
+    assert(stats().missed_steps == 0U && memcmp(expected, displayed, sizeof(expected)) == 0);
+}
+
+static void test_pause_during_step(void)
+{
+    reset();
+    at_time(40000U);
+    fluid_effect_poll(); /* Suspend after MOVE, before the step has finished. */
+    fluid_effect_set_paused(true);
+    at_time(1040000U);
+    fluid_effect_poll();
+    assert(stats().completed_steps == 0U && stats().missed_steps == 0U);
+    fluid_effect_set_paused(false);
+    finish(1U);
+    assert(stats().missed_steps == 0U && stats().last_step_us < 10000U);
+
+    reset();
+    display_accepts = false;
+    at_time(40000U);
+    finish(1U); /* Keep a completed frame pending while the display is busy. */
+    unsigned count = submissions;
+    fluid_effect_set_paused(true);
+    at_time(1040000U);
+    display_accepts = true;
+    fluid_effect_set_paused(false);
+    fluid_effect_poll();
+    assert(stats().completed_steps == 1U && stats().missed_steps == 0U);
+    assert(submissions == count + 1U);
+}
+
 static void test_25hz_cadence(void)
 {
     reset();
@@ -322,6 +401,8 @@ static void test_visible_splash(void)
 
 int main(void)
 {
+    test_pause_resume();
+    test_pause_during_step();
     test_visible_splash();
     test_short_shake();
     test_25hz_cadence();

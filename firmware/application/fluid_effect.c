@@ -23,6 +23,7 @@ typedef struct
     uint32_t input_sequence;
     bool input_valid;
     bool pending;
+    bool paused;
 } fluid_effect_t;
 
 static fluid_effect_t effect;
@@ -87,6 +88,10 @@ void fluid_effect_init(void)
 
 void fluid_effect_poll(void)
 {
+    if (effect.paused)
+    {
+        return;
+    }
     imu_snapshot_t snapshot;
     imu_get_snapshot(&snapshot);
     bool healthy = snapshot.ready && snapshot.valid && snapshot.status == IMU_OK &&
@@ -155,6 +160,31 @@ void fluid_effect_poll(void)
         if (effect.pending && led_matrix_submit(effect.pixels))
         {
             effect.pending = false;
+        }
+    }
+}
+
+void fluid_effect_set_paused(bool paused)
+{
+    if (effect.paused == paused)
+    {
+        return;
+    }
+    effect.paused = paused;
+    effect.handled_ticks = imu_platform_ticks();
+    effect.input_valid = false;
+    effect.input_samples = 0U;
+    effect.input_sum_x = 0;
+    effect.input_sum_y = 0;
+    if (!paused)
+    {
+        /* The display restarts empty. Re-submit the last complete frame immediately,
+         * retain any in-flight solver state, and never replay time or input asleep. */
+        effect.pending = true;
+        if (effect.sim.phase != FLUID_PHASE_IDLE)
+        {
+            effect.step_started_us = imu_platform_time_us();
+            effect.work_us = 0U;
         }
     }
 }
