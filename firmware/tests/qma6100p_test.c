@@ -74,7 +74,8 @@ static bool write_reg(uint8_t reg, uint8_t value)
         return false;
     }
     ++writes;
-    if (reg == 0x10U && (value & 0x1FU) != (regs[reg] & 0x1FU))
+    if ((reg == 0x10U && (value & 0x1FU) != (regs[reg] & 0x1FU)) ||
+        (reg == 0x11U && (value & 0x0FU) != (regs[reg] & 0x0FU)))
     {
         data_stalled_until_ms = delay_total + data_stall_duration_ms;
         last_data_ms = delay_total;
@@ -137,6 +138,11 @@ static void delay_ms(uint32_t duration)
 {
     delay_total += duration;
     uint32_t period = (regs[0x10] & 0x1FU) == 6U ? 40U : ((regs[0x10] & 0x1FU) == 5U ? 20U : 10U);
+    unsigned mclk = regs[0x11] & 0x0FU;
+    if (mclk >= 4U && mclk <= 7U)
+    {
+        period <<= mclk - 4U;
+    }
     if (delay_total >= data_stalled_until_ms && delay_total - last_data_ms >= period)
     {
         last_data_ms = delay_total;
@@ -206,7 +212,7 @@ static void test_motion_wake(void)
     regs[0x30] = 0x7FU;
     regs[0x09] = 0x03U; /* Stale event must be cleared before arming. */
     assert(qma6100p_set_motion_wake(&device, true, 2000U, 25U) == QMA6100P_OK);
-    assert(regs[0x10] == 0xE6U && regs[0x0F] == 0x54U && regs[0x11] == 0x84U);
+    assert(regs[0x10] == 0xE0U && regs[0x0F] == 0x54U && regs[0x11] == 0x86U);
     assert(regs[0x18] == 0x1FU && regs[0x19] == 0U && regs[0x1A] == 0x0DU);
     assert(regs[0x20] == 0xFDU && regs[0x21] == 0x0DU);
     assert(regs[0x2C] == 0xFCU && regs[0x2E] == 128U && regs[0x2F] == 0xBEU);
@@ -228,7 +234,7 @@ static void test_motion_wake(void)
     assert(qma6100p_read_motion(&device, &motion) == QMA6100P_BUS_ERROR && motion);
     fail_reg = -1;
     assert(qma6100p_set_motion_wake(&device, false, 0U, 0U) == QMA6100P_OK);
-    assert(regs[0x10] == 0xE0U && (regs[0x18] & 0xE7U) == 0U);
+    assert(regs[0x10] == 0xE0U && regs[0x11] == 0x84U && (regs[0x18] & 0xE7U) == 0U);
     assert((regs[0x1A] & 0xF3U) == 0U && regs[0x21] == 0x0CU);
     assert((regs[0x30] & 1U) != 0U); /* Reset must be released in normal operation as well. */
     unsigned before = writes;
@@ -254,14 +260,18 @@ static void test_motion_detector_startup(void)
         qma6100p_t device;
         reset();
         assert(qma6100p_init(&device, bus) == QMA6100P_OK);
+        regs[0x11] |= 0x30U; /* Non-default CIC reset timing must survive both transitions. */
         simulate_detector_start = true;
         assert(qma6100p_set_motion_wake(&device, true, 2000U, rates[i]) == QMA6100P_OK);
+        assert((regs[0x10] & 0x1FU) == 0U && regs[0x11] == (uint8_t)(0xB6U - i));
         assert(!mapped_startup_event);
         delay_ms(1000U / rates[i]); /* Stationary first sample must not wake immediately. */
         bool motion;
         assert(qma6100p_read_motion(&device, &motion) == QMA6100P_OK && !motion);
         regs[0x09] = 4U; /* A real event after arming is still latched and reported. */
         assert(qma6100p_read_motion(&device, &motion) == QMA6100P_OK && motion);
+        assert(qma6100p_set_motion_wake(&device, false, 0U, 0U) == QMA6100P_OK);
+        assert((regs[0x10] & 0x1FU) == 0U && regs[0x11] == 0xB4U);
     }
 }
 
@@ -270,7 +280,7 @@ static void test_odr_data_settling(void)
     qma6100p_t device;
     reset();
     assert(qma6100p_init(&device, bus) == QMA6100P_OK);
-    /* Reproduce the reported +/-full-scale, NEWDATA=0 interval around an ODR switch. */
+    /* Clock changes also need the existing bounded wait for fresh data. */
     data_stall_duration_ms = 600U;
     uint32_t before = delay_total;
     assert(qma6100p_set_motion_wake(&device, true, 2000U, 25U) == QMA6100P_OK);
@@ -288,9 +298,31 @@ static void test_odr_data_settling(void)
     assert(delay_total - before <= 1000U && (regs[0x1A] & 1U) == 0U);
 }
 
+static void test_motion_clock_failure(void)
+{
+    for (unsigned failure = 0U; failure < 2U; ++failure)
+    {
+        qma6100p_t device;
+        reset();
+        assert(qma6100p_init(&device, bus) == QMA6100P_OK);
+        if (failure == 0U)
+        {
+            fail_reg = 0x11;
+        }
+        else
+        {
+            ignored_motion_reg = 0x11;
+        }
+        assert(qma6100p_set_motion_wake(&device, true, 2000U, 25U) ==
+               (failure == 0U ? QMA6100P_BUS_ERROR : QMA6100P_CONFIG_ERROR));
+        assert((regs[0x18] & 7U) == 0U && (regs[0x1A] & 1U) == 0U);
+    }
+}
+
 int main(void)
 {
     test_motion_wake();
+    test_motion_clock_failure();
     test_odr_data_settling();
     test_motion_detector_startup();
     qma6100p_t device;

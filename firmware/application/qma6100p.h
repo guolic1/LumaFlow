@@ -41,7 +41,8 @@ typedef struct
 qma6100p_status_t qma6100p_init(qma6100p_t *device, qma6100p_bus_t bus);
 qma6100p_status_t qma6100p_read(qma6100p_t *device, qma6100p_sample_t *sample);
 /* Latched INT1, active high, XYZ adjacent-sample motion. Sleep rates: 25/50/100Hz.
- * Disabling restores the normal 100Hz ODR; threshold/rate are then ignored.
+ * Keep BW[4:0]=0 and scale MCLK for sleep; disabling restores MCLK=51.2kHz
+ * and normal 100Hz sampling. Threshold/rate are then ignored.
  * Both transitions wait for two fresh XYZ samples, with a bounded 1s timeout. */
 qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uint16_t threshold_mg,
                                            uint16_t sample_rate_hz);

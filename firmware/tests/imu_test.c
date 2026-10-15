@@ -158,7 +158,7 @@ int main(void)
     before_reads = reads;
     interrupt_on_arm = true;
     assert(imu_set_motion_sleep(true, 2000U));
-    assert(motion_armed && !sampling_enabled && registers[0x10] == 0x06U);
+    assert(motion_armed && !sampling_enabled && registers[0x10] == 0U && registers[0x11] == 0x86U);
     before_reads = reads; /* Transition reads verify freshness; suspended polling adds none. */
     imu_get_snapshot(&snapshot);
     assert(snapshot.ready && !snapshot.valid && snapshot.status == IMU_STOPPED);
@@ -174,7 +174,7 @@ int main(void)
            wake_stats.last_status == IMU_OK && wake_stats.sample_status == IMU_OK &&
            wake_stats.sample.x == 1024);
     assert(imu_set_motion_sleep(false, 0U));
-    assert(!motion_armed && sampling_enabled && registers[0x10] == 0U);
+    assert(!motion_armed && sampling_enabled && registers[0x10] == 0U && registers[0x11] == 0x84U);
     before_reads = reads;
     imu_poll();
     assert(reads == before_reads); /* Rebase scheduling; sleep is not a missed sample. */

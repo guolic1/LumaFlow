@@ -219,7 +219,7 @@ qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uin
         return QMA6100P_CONFIG_ERROR;
     }
     uint32_t threshold = ((uint32_t)threshold_mg * QMA6100P_COUNTS_PER_G + 15999U) / 16000U;
-    uint8_t odr = sample_rate_hz == 25U ? 0x06U : (sample_rate_hz == 50U ? 0x05U : 0U);
+    uint8_t mclk = sample_rate_hz == 25U ? 0x06U : (sample_rate_hz == 50U ? 0x05U : 0x04U);
     if (enabled && (threshold_mg == 0U || threshold > 255U ||
                     (sample_rate_hz != 25U && sample_rate_hz != 50U && sample_rate_hz != 100U)))
     {
@@ -237,9 +237,11 @@ qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uin
         {REG_MOTION_RESET, 0x01U, 0U}, /* Hold the detector in reset across input/ODR changes. */
         {REG_INT_EN0, 0xFFU, 0U},
         {REG_INT_EN1, 0x70U, 0U},
-        /* RIOT qma6100p_odr_t: 0x06=25Hz, 0x05=50Hz, 0x00=100Hz at MCLK=51.2kHz.
-         * https://api.riot-os.org/group__drivers__qma6100p.html */
-        {REG_BW, 0x1FU, enabled ? odr : 0U},
+        /* Avoid changing the live data path's 512-clock sampling divider.
+         * Scale MCLK instead: 12.8/25.6/51.2kHz -> nominal 25/50/100Hz.
+         * QST Rev. E 9.11/9.12; retain the CIC reset timing bits in PM. */
+        {REG_BW, 0x1FU, 0U},
+        {REG_PM, 0x8FU, (uint8_t)(0x80U | (enabled ? mclk : 0x04U))},
         {REG_INT_PIN, 0x03U, 0x01U},
         {REG_INT_CFG, 0xC1U, enabled ? 0x01U : 0U},
         {REG_MOTION_DURATION, 0x03U, 0U}, /* One qualifying sample. */
