@@ -11,7 +11,7 @@ static unsigned reads;
 static bool bus_ok;
 static bool timer_ok;
 static bool timer_running;
-static bool sampling_enabled, motion_armed, motion_pending, interrupt_on_arm;
+static bool sampling_enabled, motion_armed, motion_pending, interrupt_on_arm, interrupt_on_config;
 
 void imu_platform_set_sampling(bool enabled)
 {
@@ -24,7 +24,7 @@ void imu_platform_enable_motion_wake(bool enabled)
 }
 bool imu_platform_motion_pending(void)
 {
-    return motion_pending;
+    return motion_pending || (motion_armed && (registers[0x09] & 7U) != 0U);
 }
 void imu_platform_clear_motion(void)
 {
@@ -53,6 +53,9 @@ uint32_t imu_platform_time_ms(void)
 void imu_platform_delay_ms(uint32_t duration)
 {
     (void)duration;
+    registers[1] |= 1U;
+    registers[3] |= 1U;
+    registers[5] |= 1U;
 }
 bool imu_platform_read(uint8_t reg, uint8_t *data, uint8_t length)
 {
@@ -66,6 +69,12 @@ bool imu_platform_read(uint8_t reg, uint8_t *data, uint8_t length)
         return false;
     }
     memcpy(data, &registers[reg], length);
+    if (reg == 1U)
+    {
+        registers[1] &= (uint8_t)~1U;
+        registers[3] &= (uint8_t)~1U;
+        registers[5] &= (uint8_t)~1U;
+    }
     if (reg == 0x09U)
     {
         registers[reg] = 0U;
@@ -80,10 +89,14 @@ bool imu_platform_write(uint8_t reg, uint8_t value)
         return false;
     }
     registers[reg] = value;
-    if (reg == 0x18U && (value & 7U) == 7U && interrupt_on_arm)
+    if (reg == 0x20U && interrupt_on_config && motion_armed)
     {
-        assert(motion_armed);
         motion_pending = true;
+    }
+    if ((reg == 0x18U || reg == 0x1AU) && (registers[0x18] & 7U) == 7U &&
+        (registers[0x1A] & 1U) != 0U && interrupt_on_arm)
+    {
+        motion_pending = motion_armed;
         registers[0x09] = 1U;
     }
     return true;
@@ -133,9 +146,15 @@ int main(void)
     uint32_t before_sequence = snapshot.sequence;
     uint32_t before_missed = snapshot.missed_ticks;
     unsigned before_reads = reads;
+    interrupt_on_config = true;
+    assert(imu_set_motion_sleep(true, 2000U));
+    assert(!imu_platform_motion_pending()); /* Configuration edges must not survive MCU arming. */
+    assert(imu_set_motion_sleep(false, 0U));
+    before_reads = reads;
     interrupt_on_arm = true;
     assert(imu_set_motion_sleep(true, 2000U));
     assert(motion_armed && !sampling_enabled && registers[0x10] == 0x06U);
+    before_reads = reads; /* Transition reads verify freshness; suspended polling adds none. */
     imu_get_snapshot(&snapshot);
     assert(snapshot.ready && !snapshot.valid && snapshot.status == IMU_STOPPED);
     ticks += 30000U;
@@ -145,6 +164,7 @@ int main(void)
     assert(imu_check_motion_wake(&motion) && motion && !motion_pending);
     assert(imu_set_motion_sleep(false, 0U));
     assert(!motion_armed && sampling_enabled && registers[0x10] == 0U);
+    before_reads = reads;
     imu_poll();
     assert(reads == before_reads); /* Rebase scheduling; sleep is not a missed sample. */
     ++ticks;
@@ -168,12 +188,13 @@ int main(void)
     assert(!imu_set_motion_sleep(true, 4000U) && sampling_enabled && !motion_armed);
     imu_get_snapshot(&snapshot);
     assert(snapshot.status == IMU_CONFIG_ERROR);
+    unsigned stopped_reads = reads;
     imu_stop();
     ++ticks;
     imu_poll();
     imu_get_snapshot(&snapshot);
     assert(!timer_running && !motion_armed && !snapshot.ready && snapshot.status == IMU_STOPPED);
-    assert(reads == before_reads + 1U);
+    assert(reads == stopped_reads);
     bus_ok = false;
     imu_init();
     imu_poll();

@@ -25,6 +25,7 @@
 #define REG_TST0_ANA 0x4AU
 #define REG_AFE_ANA 0x56U
 #define REG_TST1_ANA 0x5FU
+#define ODR_SETTLE_TIMEOUT_MS 1000U
 
 _Static_assert(QMA6100P_RANGE_G == 8U, "Range metadata must match the 0x04 register setting");
 
@@ -181,6 +182,35 @@ qma6100p_status_t qma6100p_read(qma6100p_t *device, qma6100p_sample_t *sample)
     return QMA6100P_OK;
 }
 
+static qma6100p_status_t wait_fresh_samples(qma6100p_t *device, uint16_t sample_rate_hz)
+{
+    qma6100p_sample_t sample;
+    /* Discard the old-rate NEWDATA flags. ODR changes can leave stale/full-scale
+     * data for hundreds of ms, so a fixed one-period delay is insufficient. */
+    qma6100p_status_t status = qma6100p_read(device, &sample);
+    if (status != QMA6100P_OK)
+    {
+        return status;
+    }
+    uint32_t period_ms = 1000U / sample_rate_hz;
+    unsigned fresh = 0U;
+    for (uint32_t elapsed = 0U; elapsed + period_ms <= ODR_SETTLE_TIMEOUT_MS; elapsed += period_ms)
+    {
+        device->bus.delay_ms(period_ms);
+        status = qma6100p_read(device, &sample);
+        if (status != QMA6100P_OK)
+        {
+            return status;
+        }
+        fresh = sample.new_data == 7U ? fresh + 1U : 0U;
+        if (fresh == 2U)
+        {
+            return QMA6100P_OK;
+        }
+    }
+    return QMA6100P_CONFIG_ERROR;
+}
+
 qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uint16_t threshold_mg,
                                            uint16_t sample_rate_hz)
 {
@@ -201,9 +231,10 @@ qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uin
     {
         uint8_t reg, mask, value;
     } settings[] = {
-        {REG_INT_EN2, 0xE7U, 0U},
         {REG_INT_MAP0, 0xFFU, 0U},
         {REG_INT_MAP1, 0xF3U, 0U},
+        {REG_INT_EN2, 0xE7U, 0U},
+        {REG_MOTION_RESET, 0x01U, 0U}, /* Hold the detector in reset across input/ODR changes. */
         {REG_INT_EN0, 0xFFU, 0U},
         {REG_INT_EN1, 0x70U, 0U},
         /* RIOT qma6100p_odr_t: 0x06=25Hz, 0x05=50Hz, 0x00=100Hz at MCLK=51.2kHz.
@@ -224,19 +255,14 @@ qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uin
             return status;
         }
     }
-    /* Let one complete sample at the new rate settle before resetting/arming
-     * the detector, so an ODR transition is not interpreted as motion. */
-    device->bus.delay_ms(enabled ? 1000U / sample_rate_hz : 10U);
-    bool unused;
-    qma6100p_status_t status = qma6100p_read_motion(device, &unused);
-    if (status != QMA6100P_OK || !enabled)
+    qma6100p_status_t status = QMA6100P_OK;
+    if (enabled)
     {
-        return status;
-    }
-    status = update(device, REG_MOTION_THRESHOLD, 0xFFU, (uint8_t)threshold);
-    if (status == QMA6100P_OK)
-    {
-        status = update(device, REG_MOTION_RESET, 0x01U, 0U);
+        status = update(device, REG_MOTION_THRESHOLD, 0xFFU, (uint8_t)threshold);
+        if (status == QMA6100P_OK)
+        {
+            status = update(device, REG_INT_EN2, 0x07U, 0x07U);
+        }
     }
     if (status == QMA6100P_OK)
     {
@@ -244,9 +270,20 @@ qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uin
     }
     if (status == QMA6100P_OK)
     {
+        /* Run unmapped until two fresh XYZ samples establish slope history.
+         * On resume, also wait for fresh 100Hz data before publishing samples. */
+        status = wait_fresh_samples(device, enabled ? sample_rate_hz : 100U);
+    }
+    if (status == QMA6100P_OK)
+    {
+        bool unused;
+        status = qma6100p_read_motion(device, &unused); /* Clear initialization events last. */
+    }
+    if (status == QMA6100P_OK && enabled)
+    {
         status = update(device, REG_INT_MAP1, 0x01U, 0x01U);
     }
-    return status == QMA6100P_OK ? update(device, REG_INT_EN2, 0x07U, 0x07U) : status;
+    return status;
 }
 
 qma6100p_status_t qma6100p_read_motion(qma6100p_t *device, bool *motion)

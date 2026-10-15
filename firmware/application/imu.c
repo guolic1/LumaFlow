@@ -95,8 +95,8 @@ bool imu_set_motion_sleep(bool sleeping, uint16_t threshold_mg)
     }
     if (sleeping)
     {
-        /* Arm EXTI before the sensor so an immediate event survives the transition. */
-        imu_platform_enable_motion_wake(true);
+        /* Input/polarity/reset changes may generate edges while configuring the IMU. */
+        imu_platform_enable_motion_wake(false);
     }
     else
     {
@@ -117,6 +117,10 @@ bool imu_set_motion_sleep(bool sleeping, uint16_t threshold_mg)
     }
     if (sleeping)
     {
+        /* Discard configuration edges only after the detector is ready. INT1 is
+         * latched, and the platform also checks its level, so a real event between
+         * sensor mapping and EXTI arming is retained. */
+        imu_platform_enable_motion_wake(true);
         imu_platform_set_sampling(false);
     }
     else

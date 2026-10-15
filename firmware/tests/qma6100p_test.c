@@ -19,6 +19,12 @@ static unsigned nvm_pending_reads;
 static unsigned bad_state_resets;
 static unsigned startup_writes;
 static uint32_t test_mode_started;
+static bool simulate_detector_start, detector_start_pending;
+static uint32_t detector_released_ms;
+static uint32_t data_stall_duration_ms, data_stalled_until_ms, last_data_ms;
+static bool stale_data_flags, mapped_startup_event;
+
+static void set_axis(unsigned reg, int value, unsigned flags);
 
 static const uint8_t startup[][2] = {
     {0x11U, 0x80U}, {0x11U, 0x84U}, {0x4AU, 0x20U}, {0x56U, 0x01U}, {0x5FU, 0x80U}, {0x5FU, 0x00U},
@@ -48,6 +54,12 @@ static bool read_regs(uint8_t reg, uint8_t *data, uint8_t length)
     }
     assert((unsigned)reg + length <= sizeof(regs));
     memcpy(data, &regs[reg], length);
+    if (reg == 0x01U)
+    {
+        regs[1] &= (uint8_t)~1U;
+        regs[3] &= (uint8_t)~1U;
+        regs[5] &= (uint8_t)~1U;
+    }
     if (reg == 0x09U)
     {
         regs[reg] = 0U; /* Selective read-to-clear for the latched motion source. */
@@ -62,6 +74,22 @@ static bool write_reg(uint8_t reg, uint8_t value)
         return false;
     }
     ++writes;
+    if (reg == 0x10U && (value & 0x1FU) != (regs[reg] & 0x1FU))
+    {
+        data_stalled_until_ms = delay_total + data_stall_duration_ms;
+        last_data_ms = delay_total;
+        if (data_stall_duration_ms != 0U)
+        {
+            set_axis(1U, -8191, stale_data_flags ? 1U : 0U);
+            set_axis(3U, -8191, stale_data_flags ? 1U : 0U);
+            set_axis(5U, 8191, stale_data_flags ? 1U : 0U);
+        }
+    }
+    if (simulate_detector_start && reg == 0x30U && (value & 1U) != 0U && (regs[reg] & 1U) == 0U)
+    {
+        detector_start_pending = true;
+        detector_released_ms = delay_total;
+    }
     if (reg == 0x36U)
     {
         if (value == 0xB6U)
@@ -108,6 +136,22 @@ static bool write_reg(uint8_t reg, uint8_t value)
 static void delay_ms(uint32_t duration)
 {
     delay_total += duration;
+    uint32_t period = (regs[0x10] & 0x1FU) == 6U ? 40U : ((regs[0x10] & 0x1FU) == 5U ? 20U : 10U);
+    if (delay_total >= data_stalled_until_ms && delay_total - last_data_ms >= period)
+    {
+        last_data_ms = delay_total;
+        set_axis(1U, -64, 1U);
+        set_axis(3U, 128, 1U);
+        set_axis(5U, 1365, 1U);
+    }
+    if (detector_start_pending && (regs[0x18] & 7U) != 0U &&
+        delay_total - detector_released_ms >= period)
+    {
+        /* Model a first-sample transient after resetting the slope history. */
+        regs[0x09] |= 1U;
+        mapped_startup_event |= (regs[0x1A] & 1U) != 0U;
+        detector_start_pending = false;
+    }
 }
 
 static qma6100p_bus_t bus = {read_regs, write_reg, delay_ms};
@@ -135,6 +179,10 @@ static void reset(void)
     bad_state_resets = 0U;
     startup_writes = 0U;
     test_mode_started = 0U;
+    simulate_detector_start = detector_start_pending = false;
+    detector_released_ms = 0U;
+    data_stall_duration_ms = data_stalled_until_ms = last_data_ms = 0U;
+    stale_data_flags = mapped_startup_event = false;
 }
 
 static void set_axis(unsigned reg, int value, unsigned flags)
@@ -177,6 +225,7 @@ static void test_motion_wake(void)
     assert(qma6100p_set_motion_wake(&device, false, 0U, 0U) == QMA6100P_OK);
     assert(regs[0x10] == 0xE0U && (regs[0x18] & 0xE7U) == 0U);
     assert((regs[0x1A] & 0xF3U) == 0U && regs[0x21] == 0x0CU);
+    assert((regs[0x30] & 1U) != 0U); /* Reset must be released in normal operation as well. */
     unsigned before = writes;
     assert(qma6100p_set_motion_wake(&device, true, 0U, 25U) == QMA6100P_CONFIG_ERROR);
     assert(qma6100p_set_motion_wake(&device, true, 4000U, 25U) == QMA6100P_CONFIG_ERROR);
@@ -192,9 +241,53 @@ static void test_motion_wake(void)
     assert((regs[0x18] & 7U) == 0U);
 }
 
+static void test_motion_detector_startup(void)
+{
+    const uint16_t rates[] = {25U, 50U, 100U};
+    for (unsigned i = 0U; i < sizeof(rates) / sizeof(rates[0]); ++i)
+    {
+        qma6100p_t device;
+        reset();
+        assert(qma6100p_init(&device, bus) == QMA6100P_OK);
+        simulate_detector_start = true;
+        assert(qma6100p_set_motion_wake(&device, true, 2000U, rates[i]) == QMA6100P_OK);
+        assert(!mapped_startup_event);
+        delay_ms(1000U / rates[i]); /* Stationary first sample must not wake immediately. */
+        bool motion;
+        assert(qma6100p_read_motion(&device, &motion) == QMA6100P_OK && !motion);
+        regs[0x09] = 4U; /* A real event after arming is still latched and reported. */
+        assert(qma6100p_read_motion(&device, &motion) == QMA6100P_OK && motion);
+    }
+}
+
+static void test_odr_data_settling(void)
+{
+    qma6100p_t device;
+    reset();
+    assert(qma6100p_init(&device, bus) == QMA6100P_OK);
+    /* Reproduce the reported +/-full-scale, NEWDATA=0 interval around an ODR switch. */
+    data_stall_duration_ms = 600U;
+    uint32_t before = delay_total;
+    assert(qma6100p_set_motion_wake(&device, true, 2000U, 25U) == QMA6100P_OK);
+    assert(delay_total - before >= 640U && (regs[0x1A] & 1U) != 0U);
+    before = delay_total;
+    assert(qma6100p_set_motion_wake(&device, false, 0U, 0U) == QMA6100P_OK);
+    assert(delay_total - before >= 610U);
+    qma6100p_sample_t sample;
+    assert(qma6100p_read(&device, &sample) == QMA6100P_OK);
+    assert(sample.x == -64 && sample.y == 128 && sample.z == 1365);
+    data_stall_duration_ms = 2000U;
+    stale_data_flags = true; /* One old set of NEWDATA flags cannot establish a fresh stream. */
+    before = delay_total;
+    assert(qma6100p_set_motion_wake(&device, true, 2000U, 25U) == QMA6100P_CONFIG_ERROR);
+    assert(delay_total - before <= 1000U && (regs[0x1A] & 1U) == 0U);
+}
+
 int main(void)
 {
     test_motion_wake();
+    test_odr_data_settling();
+    test_motion_detector_startup();
     qma6100p_t device;
     qma6100p_sample_t sample;
     reset();
