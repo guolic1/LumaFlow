@@ -119,6 +119,18 @@ pwsh -NoProfile -File scripts/lumaflow.ps1 -Command ota -Port COM3 -Image build/
 若 receiving，需要手动复位或重新上电后再次执行完整 OTA，因为当前固件拒绝在 receiving 状态开始新升级。
 failed 状态可直接重新执行 OTA。工具不跨进程断点续传。
 
+## 唤醒诊断
+
+```powershell
+.\scripts\lumaflow.ps1 -Command wake -Port COM9
+```
+
+计数从固件启动累计，查询不会清零。`SleepEntries` 为成功进入 IMU 休眠配置的次数；`MotionEvents` 为 `0x09` 触发轴非零的次数；`EmptyInterrupts` 为有待处理中断、但未读到触发轴的次数，不会恢复 LED；`WakeReadErrors` 为读取运动状态失败而恢复运行的次数。
+
+`LastMotionStatus` 保留最近一次中断检查读到的 `0x09`：bit0/1/2 对应 X/Y/Z 触发轴，bit3 为方向。仅当 `LastReadStatus=OK` 时有效。`LastEventAfterSleepMs` 为该次检查距离本次休眠配置完成的时间，包含此前未恢复运行的空中断。`LastXg/Yg/Zg` 和 `LastNewData` 在清除中断后、恢复 100Hz 之前读取，属于经过数据 LPF 的观测值，不能代表触发瞬间或旁路 LPF 的检测器输入；仅当 `LastSampleStatus=OK` 时有效。未检查过中断时两个状态为 `NOT_READY`。
+
+休眠时串口关闭，查询需等待设备恢复运行；可先发送命令，出现自动亮灯后读取结果。旧固件或 Bootloader 对 `0x32` 返回 `BAD_COMMAND`。
+
 ## 验证
 
 PIC/FLIP 固件启动后默认运行液体效果。查询实际负载：
@@ -141,6 +153,7 @@ pwsh -NoProfile -File scripts/tests/ota_test.ps1
 pwsh -NoProfile -File scripts/tests/ota_flash_test.ps1
 pwsh -NoProfile -File scripts/tests/imu_test.ps1
 pwsh -NoProfile -File scripts/tests/fluid_test.ps1
+pwsh -NoProfile -File scripts/tests/wake_test.ps1
 ```
 
 OTA 测试包括协议测试、复位后丢失一次探测、完整/最大镜像、块大小协商、非对齐末块、

@@ -288,15 +288,24 @@ qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uin
 
 qma6100p_status_t qma6100p_read_motion(qma6100p_t *device, bool *motion)
 {
-    if (device == NULL || !device->ready || motion == NULL)
+    if (motion == NULL)
     {
         return QMA6100P_CONFIG_ERROR;
     }
     uint8_t status;
-    if (!device->bus.read(REG_MOTION_STATUS, &status, 1U))
+    qma6100p_status_t result = qma6100p_read_motion_status(device, &status);
+    if (result == QMA6100P_OK)
     {
-        return QMA6100P_BUS_ERROR;
+        *motion = (status & 0x07U) != 0U;
     }
-    *motion = (status & 0x07U) != 0U;
-    return QMA6100P_OK;
+    return result;
+}
+
+qma6100p_status_t qma6100p_read_motion_status(qma6100p_t *device, uint8_t *status)
+{
+    if (device == NULL || !device->ready || status == NULL)
+    {
+        return QMA6100P_CONFIG_ERROR;
+    }
+    return device->bus.read(REG_MOTION_STATUS, status, 1U) ? QMA6100P_OK : QMA6100P_BUS_ERROR;
 }

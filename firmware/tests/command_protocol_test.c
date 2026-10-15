@@ -196,6 +196,48 @@ void imu_get_snapshot(imu_snapshot_t *snapshot)
     *snapshot = imu_snapshot;
 }
 
+void imu_get_wake_stats(imu_wake_stats_t *stats)
+{
+    *stats = (imu_wake_stats_t){
+        .sleep_entries = 0x01020304U,
+        .motion_events = 2U,
+        .empty_interrupts = 3U,
+        .read_errors = 4U,
+        .last_event_after_sleep_ms = UINT32_MAX,
+        .sample = {-8192, 8191, -4096, 5U},
+        .motion_status = 0x8CU,
+        .last_status = IMU_OK,
+        .sample_status = IMU_OK,
+    };
+}
+
+static void test_application_wake(void)
+{
+    command_server_t server;
+    uint8_t response[COMMAND_PROTOCOL_MAX_RAW_FRAME_SIZE];
+    static const uint8_t expected[] = {
+        4,   3,   2,   1,   2, 0,    0,   0,    3, 0,    0, 0,    4, 0, 0, 0,
+        255, 255, 255, 255, 0, 0xE0, 255, 0x1F, 0, 0xF0, 5, 0x8C, 0, 0, 8, 25,
+    };
+    application_commands_init(&server);
+    for (unsigned attempt = 0U; attempt < 2U; ++attempt)
+    {
+        reset_transport(&application_transport);
+        application_transport.input_length =
+            make_request(application_transport.input, 1U, 48U, 0x32U, NULL, 0U, false);
+        assert(command_server_poll(&server));
+        assert(decode_response(&application_transport, response) == 41U);
+        assert(response[4] == COMMAND_STATUS_OK && response[2] == 48U && response[3] == 0x32U);
+        assert(memcmp(&response[7], expected, sizeof(expected)) == 0);
+    }
+    reset_transport(&application_transport);
+    application_transport.input_length =
+        make_request(application_transport.input, 1U, 49U, 0x32U, expected, 1U, false);
+    assert(command_server_poll(&server));
+    assert(decode_response(&application_transport, response) == 9U);
+    assert(response[4] == COMMAND_STATUS_BAD_LENGTH);
+}
+
 void fluid_effect_get_stats(fluid_effect_stats_t *stats)
 {
     *stats = (fluid_effect_stats_t){0x01020304U, 1200U, 2400U, 3000U, 7U, 190U, 3650U};
@@ -274,12 +316,13 @@ static void test_application_imu(void)
         make_request(application_transport.input, 1U, 45U, COMMAND_ID_GET_INFO, NULL, 0U, false);
     assert(command_server_poll(&server));
     assert(decode_response(&application_transport, response) == 21U);
-    assert(response[7U + 8U] == 25U); /* bootloader entry + IMU + fluid stats */
+    assert(response[7U + 8U] == 57U); /* bootloader entry + IMU + fluid + wake stats */
     assert(!application_commands_take_bootloader_request());
 }
 
 int main(void)
 {
+    test_application_wake();
     static const command_device_info_t device_info = {
         .image_type = COMMAND_IMAGE_APPLICATION,
         .version_major = 1U,

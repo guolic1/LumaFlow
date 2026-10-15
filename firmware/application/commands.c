@@ -18,7 +18,7 @@ static const command_device_info_t application_info = {
     .version_minor = APPLICATION_VERSION_MINOR,
     .version_patch = APPLICATION_VERSION_PATCH,
     .capabilities = COMMAND_CAPABILITY_ENTER_BOOTLOADER | COMMAND_CAPABILITY_READ_IMU |
-                    COMMAND_CAPABILITY_READ_FLUID,
+                    COMMAND_CAPABILITY_READ_FLUID | COMMAND_CAPABILITY_READ_WAKE,
 };
 
 static command_status_t handle_enter_bootloader(const void *context, const uint8_t *request,
@@ -106,7 +106,45 @@ static command_status_t handle_get_fluid(const void *context, const uint8_t *req
     return COMMAND_STATUS_OK;
 }
 
+static command_status_t handle_get_wake(const void *context, const uint8_t *request,
+                                        uint16_t request_length, uint8_t *response,
+                                        uint16_t response_capacity, uint16_t *response_length)
+{
+    imu_wake_stats_t stats;
+    (void)context;
+    (void)request;
+    (void)request_length;
+    if (response_capacity < 32U)
+    {
+        return COMMAND_STATUS_INTERNAL_ERROR;
+    }
+    imu_get_wake_stats(&stats);
+    write_u32_le(&response[0], stats.sleep_entries);
+    write_u32_le(&response[4], stats.motion_events);
+    write_u32_le(&response[8], stats.empty_interrupts);
+    write_u32_le(&response[12], stats.read_errors);
+    write_u32_le(&response[16], stats.last_event_after_sleep_ms);
+    write_u16_le(&response[20], (uint16_t)stats.sample.x);
+    write_u16_le(&response[22], (uint16_t)stats.sample.y);
+    write_u16_le(&response[24], (uint16_t)stats.sample.z);
+    response[26] = stats.sample.new_data;
+    response[27] = stats.motion_status;
+    response[28] = (uint8_t)stats.last_status;
+    response[29] = (uint8_t)stats.sample_status;
+    response[30] = IMU_RANGE_G;
+    response[31] = IMU_SLEEP_SAMPLE_RATE_HZ;
+    *response_length = 32U;
+    return COMMAND_STATUS_OK;
+}
+
 static const command_entry_t application_command_table[] = {
+    {
+        .command = COMMAND_ID_GET_WAKE,
+        .minimum_length = 0U,
+        .maximum_length = 0U,
+        .handler = handle_get_wake,
+        .context = NULL,
+    },
     {
         .command = COMMAND_ID_GET_FLUID,
         .minimum_length = 0U,

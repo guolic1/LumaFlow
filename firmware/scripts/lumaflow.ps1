@@ -12,7 +12,7 @@ pwsh -File scripts/lumaflow.ps1 -Command ota -Port COM3 -Image application.bin -
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota', 'imu', 'fluid')]
+    [ValidateSet('ports', 'info', 'ping', 'enter-bootloader', 'boot-application', 'status', 'ota', 'imu', 'fluid', 'wake')]
     [string]$Command = 'info',
     [string]$Port,
     [ValidateRange(1, 10000000)][int]$BaudRate = 1000000,
@@ -147,7 +147,7 @@ function Invoke-SerialCommand(
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $nextSend = 0
     # The firmware has no duplicate suppression for reset, boot or flash commands.
-    $retry = $CommandId -in @(1, 2, 0x23, 0x30, 0x31)
+    $retry = $CommandId -in @(1, 2, 0x23, 0x30, 0x31, 0x32)
     while ($timer.ElapsedMilliseconds -lt $TimeoutMs) {
         if ($timer.ElapsedMilliseconds -ge $nextSend) {
             $Client.Port.WriteTimeout = [Math]::Max(1, $TimeoutMs - [int]$timer.ElapsedMilliseconds)
@@ -263,6 +263,35 @@ function Get-DeviceFluid($Client, [int]$TimeoutMs = 5000) {
         GridWidth = [int]$data[26]; GridHeight = [int]$data[27]
         StateBytes = $memory; TargetHz = $rate
         WorkBudgetPercent = [Math]::Round($work * [double]$rate / 10000.0, 2)
+    }
+}
+
+function Get-DeviceWake($Client, [int]$TimeoutMs = 5000) {
+    $data = Invoke-SerialCommand $Client 0x32 -TimeoutMs $TimeoutMs
+    if ($data.Length -ne 32) { throw 'Invalid GET_WAKE response length.' }
+    $x = [BitConverter]::ToInt16($data, 20)
+    $y = [BitConverter]::ToInt16($data, 22)
+    $z = [BitConverter]::ToInt16($data, 24)
+    $statusNames = @('OK', 'BUS_ERROR', 'CHIP_ID_ERROR', 'CONFIG_ERROR', 'NOT_READY', 'STOPPED')
+    if ($data[26] -gt 7 -or $data[28] -ge $statusNames.Length -or $data[29] -ge $statusNames.Length -or
+        $data[30] -ne 8 -or $data[31] -notin @(25, 50, 100) -or
+        $x -lt -8192 -or $x -gt 8191 -or $y -lt -8192 -or $y -gt 8191 -or
+        $z -lt -8192 -or $z -gt 8191) {
+        throw 'Invalid GET_WAKE response fields.'
+    }
+    $countsPerG = 8192.0 / $data[30]
+    return [pscustomobject]@{
+        SleepEntries = [BitConverter]::ToUInt32($data, 0)
+        MotionEvents = [BitConverter]::ToUInt32($data, 4)
+        EmptyInterrupts = [BitConverter]::ToUInt32($data, 8)
+        WakeReadErrors = [BitConverter]::ToUInt32($data, 12)
+        LastEventAfterSleepMs = [BitConverter]::ToUInt32($data, 16)
+        LastMotionStatus = '0x{0:X2}' -f $data[27]
+        LastReadStatus = $statusNames[$data[28]]
+        LastSampleStatus = $statusNames[$data[29]]
+        LastXg = $x / $countsPerG; LastYg = $y / $countsPerG; LastZg = $z / $countsPerG
+        LastNewData = [int]$data[26]
+        SleepRateHz = [int]$data[31]
     }
 }
 
@@ -442,6 +471,7 @@ Commands (-Command defaults to info):
   status             Show update state and next offset (Bootloader only).
   imu                Read the latest IMU sample and health status (Application).
   fluid              Show PIC/FLIP computation timing and memory (Application).
+  wake               Show retained IMU wake causes and last event (Application).
   ota                Upload, verify and commit an Application .bin, then boot.
 
 Options:
@@ -457,7 +487,7 @@ Options:
 
 If the serial port is missing or busy, opening it is retried every 100 ms
 until it becomes available. Press Ctrl+C to cancel this wait.
-PING, GET_INFO, GET_IMU, GET_FLUID and GET_UPDATE_STATUS are resent every 100 ms while silent,
+PING, GET_INFO, GET_IMU, GET_FLUID, GET_WAKE and GET_UPDATE_STATUS are resent every 100 ms while silent,
 using one overall command deadline. Reset/boot commands probe the current image
 between attempts and wait for the target image to respond.
 
@@ -515,6 +545,7 @@ You can use pwsh instead of powershell for PowerShell 7.
             'status' { Get-DeviceUpdateStatus $client $TimeoutMs }
             'imu' { Get-DeviceImu $client $TimeoutMs }
             'fluid' { Get-DeviceFluid $client $TimeoutMs }
+            'wake' { Get-DeviceWake $client $TimeoutMs }
             'ota' { Invoke-ApplicationUpdate $client $imageData $FirmwareVersion $TimeoutMs -NoBoot:$NoBoot }
         }
     } catch {

@@ -46,5 +46,7 @@ qma6100p_status_t qma6100p_read(qma6100p_t *device, qma6100p_sample_t *sample);
 qma6100p_status_t qma6100p_set_motion_wake(qma6100p_t *device, bool enabled, uint16_t threshold_mg,
                                            uint16_t sample_rate_hz);
 qma6100p_status_t qma6100p_read_motion(qma6100p_t *device, bool *motion);
+/* Read-to-clear: preserve the raw trigger axes/sign before clearing the latch. */
+qma6100p_status_t qma6100p_read_motion_status(qma6100p_t *device, uint8_t *status);
 
 #endif

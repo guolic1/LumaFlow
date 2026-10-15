@@ -218,6 +218,11 @@ static void test_motion_wake(void)
     assert(regs[0x09] == 0U);
     regs[0x09] = 0x08U;
     assert(qma6100p_read_motion(&device, &motion) == QMA6100P_OK && !motion);
+    uint8_t raw_status = 0U;
+    regs[0x09] = 0x8CU;
+    assert(qma6100p_read_motion_status(&device, &raw_status) == QMA6100P_OK && raw_status == 0x8CU);
+    assert(regs[0x09] == 0U);
+    assert(qma6100p_read_motion_status(&device, NULL) == QMA6100P_CONFIG_ERROR);
     fail_reg = 0x09;
     motion = true;
     assert(qma6100p_read_motion(&device, &motion) == QMA6100P_BUS_ERROR && motion);

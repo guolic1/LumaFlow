@@ -9,6 +9,7 @@ static uint8_t registers[256];
 static uint32_t ticks;
 static unsigned reads;
 static bool bus_ok;
+static bool fail_sample;
 static bool timer_ok;
 static bool timer_running;
 static bool sampling_enabled, motion_armed, motion_pending, interrupt_on_arm, interrupt_on_config;
@@ -64,7 +65,7 @@ bool imu_platform_read(uint8_t reg, uint8_t *data, uint8_t length)
     {
         ++reads;
     }
-    if (!bus_ok)
+    if (!bus_ok || (reg == 1U && fail_sample))
     {
         return false;
     }
@@ -116,6 +117,10 @@ int main(void)
     timer_ok = true;
     ticks = 0xFFFFFFFEU;
     imu_init();
+    imu_wake_stats_t wake_stats;
+    imu_get_wake_stats(&wake_stats);
+    assert(wake_stats.sleep_entries == 0U && wake_stats.motion_events == 0U &&
+           wake_stats.last_status == IMU_NOT_READY && wake_stats.sample_status == IMU_NOT_READY);
     imu_get_snapshot(&snapshot);
     assert(snapshot.ready && !snapshot.valid && snapshot.status == IMU_NOT_READY);
     imu_poll();
@@ -162,6 +167,12 @@ int main(void)
     assert(reads == before_reads); /* No data polling during the suspended interval. */
     bool motion = false;
     assert(imu_check_motion_wake(&motion) && motion && !motion_pending);
+    imu_get_wake_stats(&wake_stats);
+    assert(wake_stats.sleep_entries == 2U && wake_stats.motion_events == 1U &&
+           wake_stats.empty_interrupts == 0U && wake_stats.read_errors == 0U);
+    assert(wake_stats.last_event_after_sleep_ms == 300000U && wake_stats.motion_status == 1U &&
+           wake_stats.last_status == IMU_OK && wake_stats.sample_status == IMU_OK &&
+           wake_stats.sample.x == 1024);
     assert(imu_set_motion_sleep(false, 0U));
     assert(!motion_armed && sampling_enabled && registers[0x10] == 0U);
     before_reads = reads;
@@ -176,10 +187,25 @@ int main(void)
     assert(imu_set_motion_sleep(true, 2000U));
     motion_pending = true; /* EXTI noise with no latched sensor source is ignored. */
     assert(imu_check_motion_wake(&motion) && !motion && !motion_pending);
+    imu_get_wake_stats(&wake_stats);
+    assert(wake_stats.sleep_entries == 3U && wake_stats.empty_interrupts == 1U &&
+           wake_stats.motion_status == 0U && wake_stats.last_status == IMU_OK);
+    registers[0x09] = 0x0CU;
+    fail_sample = true;
+    assert(imu_check_motion_wake(&motion) && motion); /* Diagnostic failure cannot change wake. */
+    imu_get_wake_stats(&wake_stats);
+    assert(wake_stats.motion_status == 0x0CU && wake_stats.motion_events == 2U &&
+           wake_stats.sample_status == IMU_BUS_ERROR && wake_stats.last_status == IMU_OK &&
+           wake_stats.read_errors == 0U);
+    fail_sample = false;
     bus_ok = false;
     assert(imu_check_motion_wake(&motion) && !motion); /* No IRQ means no I2C access. */
     motion_pending = true;
     assert(!imu_check_motion_wake(&motion));
+    imu_get_wake_stats(&wake_stats);
+    assert(wake_stats.read_errors == 1U && wake_stats.motion_events == 2U &&
+           wake_stats.empty_interrupts == 1U && wake_stats.last_status == IMU_BUS_ERROR &&
+           wake_stats.sample_status == IMU_NOT_READY && wake_stats.motion_status == 0U);
     imu_get_snapshot(&snapshot);
     assert(snapshot.status == IMU_BUS_ERROR && snapshot.read_errors == 2U);
     assert(!imu_set_motion_sleep(false, 0U)); /* Restoration errors remain visible to the caller. */

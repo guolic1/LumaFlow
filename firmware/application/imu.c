@@ -9,6 +9,8 @@ static imu_snapshot_t latest;
 static uint32_t handled_ticks;
 static bool timer_started;
 static bool motion_sleeping;
+static imu_wake_stats_t wake_stats;
+static uint32_t sleep_started_ms;
 
 void imu_init(void)
 {
@@ -22,6 +24,9 @@ void imu_init(void)
         imu_platform_stop();
     }
     memset(&latest, 0, sizeof(latest));
+    memset(&wake_stats, 0, sizeof(wake_stats));
+    wake_stats.last_status = IMU_NOT_READY;
+    wake_stats.sample_status = IMU_NOT_READY;
     motion_sleeping = false;
     imu_platform_enable_motion_wake(false);
     latest.status = IMU_NOT_READY;
@@ -83,6 +88,11 @@ void imu_get_snapshot(imu_snapshot_t *snapshot)
     *snapshot = latest;
 }
 
+void imu_get_wake_stats(imu_wake_stats_t *stats)
+{
+    *stats = wake_stats;
+}
+
 bool imu_set_motion_sleep(bool sleeping, uint16_t threshold_mg)
 {
     if (!latest.ready)
@@ -122,6 +132,8 @@ bool imu_set_motion_sleep(bool sleeping, uint16_t threshold_mg)
          * sensor mapping and EXTI arming is retained. */
         imu_platform_enable_motion_wake(true);
         imu_platform_set_sampling(false);
+        sleep_started_ms = imu_platform_time_ms();
+        ++wake_stats.sleep_entries;
     }
     else
     {
@@ -145,7 +157,24 @@ bool imu_check_motion_wake(bool *motion)
      * Reading 0x09 also clears the sensor latch. A short impulse stays recorded. */
     imu_platform_clear_motion();
     imu_platform_set_sampling(true); /* Keep bounded I2C timeouts while checking the latch. */
-    qma6100p_status_t status = qma6100p_read_motion(&device, motion);
+    wake_stats.last_event_after_sleep_ms = imu_platform_time_ms() - sleep_started_ms;
+    wake_stats.motion_status = 0U;
+    wake_stats.sample = (qma6100p_sample_t){0};
+    wake_stats.sample_status = IMU_NOT_READY;
+    qma6100p_status_t status = qma6100p_read_motion_status(&device, &wake_stats.motion_status);
+    wake_stats.last_status = (imu_status_t)status;
+    if (status == QMA6100P_OK)
+    {
+        *motion = (wake_stats.motion_status & 0x07U) != 0U;
+        wake_stats.motion_events += *motion ? 1U : 0U;
+        wake_stats.empty_interrupts += *motion ? 0U : 1U;
+        /* Capture before restoring ODR; diagnostic failure must not change wake policy. */
+        wake_stats.sample_status = (imu_status_t)qma6100p_read(&device, &wake_stats.sample);
+    }
+    else
+    {
+        ++wake_stats.read_errors;
+    }
     imu_platform_set_sampling(false);
     if (status != QMA6100P_OK)
     {
