@@ -113,14 +113,16 @@ bool motion_sleep_poll(void)
     if (!activity.sleeping &&
         (uint32_t)(snapshot.timestamp_ms - activity.last_motion_ms) >= MOTION_SLEEP_IDLE_MS)
     {
-        if (!imu_set_motion_sleep(true, MOTION_SLEEP_WAKE_THRESHOLD_MG))
-        {
-            return false;
-        }
         fluid_effect_set_paused(true);
         led_matrix_stop();
         serial_uart_flush();
         serial_uart_deinit();
+        /* Settle the IMU after switching display/UART loads, so their transitions
+         * are cleared before motion wake is armed. Failure remains fatal to main. */
+        if (!imu_set_motion_sleep(true, MOTION_SLEEP_WAKE_THRESHOLD_MG))
+        {
+            return false;
+        }
         activity.sleeping = true;
     }
     return true;

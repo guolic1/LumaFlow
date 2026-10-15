@@ -31,7 +31,7 @@ void serial_uart_flush(void)
 }
 void serial_uart_deinit(void)
 {
-    assert(uart_running && imu_monitoring);
+    assert(uart_running && !imu_monitoring);
     uart_running = false;
 }
 void serial_uart_init(void)

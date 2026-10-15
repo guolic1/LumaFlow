@@ -17,7 +17,7 @@ bool imu_set_motion_sleep(bool value, uint16_t threshold_mg)
 {
     if (value)
     {
-        assert(threshold_mg == 2000U && !paused && display_running && uart_running);
+        assert(threshold_mg == 2000U);
         if (!arm_ok)
         {
             return false;
@@ -39,7 +39,9 @@ void serial_uart_flush(void)
 }
 void serial_uart_deinit(void)
 {
-    assert(uart_running && imu_sleeping && paused && !display_running);
+    assert(uart_running && paused && !display_running);
+    /* A load-switch transient must happen before the motion detector is armed. */
+    irq_motion |= imu_sleeping;
     uart_running = false;
 }
 void serial_uart_init(void)
@@ -59,6 +61,7 @@ uint32_t imu_platform_time_ms(void)
 void led_matrix_stop(void)
 {
     assert(display_running && paused);
+    irq_motion |= imu_sleeping;
     display_running = false;
     ++stops;
 }
@@ -254,7 +257,8 @@ static void test_arm_failure(void)
     sample.timestamp_ms = now_ms;
     ++sample.sequence;
     assert(!motion_sleep_poll());
-    assert(!motion_sleep_is_sleeping() && display_running && !paused && uart_running);
+    /* Configuration failure is fatal to the caller; it must not enter Stop. */
+    assert(!motion_sleep_is_sleeping() && !display_running && paused && !uart_running);
 }
 
 int main(void)
